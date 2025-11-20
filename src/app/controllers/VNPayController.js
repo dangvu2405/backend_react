@@ -151,7 +151,17 @@ class VNPayController {
             
             // ✅ 4. vnp_Amount: Phải là SỐ NGUYÊN (không phải string), nhân 100
             // Đảm bảo là số nguyên, không có dấu phẩy, dấu chấm
-            vnp_Params['vnp_Amount'] = parseInt(Math.round(amount_vnpay * 100));
+            // VNPay yêu cầu amount tính bằng xu (VND * 100)
+            const amountInXu = Math.round(amount_vnpay * 100);
+            vnp_Params['vnp_Amount'] = amountInXu;
+            
+            // Validate amount
+            if (isNaN(amountInXu) || amountInXu <= 0) {
+                return res.status(400).json({
+                    message: 'Số tiền không hợp lệ',
+                    error: 'Amount phải là số dương'
+                });
+            }
             
             // ✅ 5. vnp_CreateDate: Format YYYYMMDDHHmmss (14 ký tự số) - đã xử lý ở trên
             vnp_Params['vnp_CreateDate'] = createDate;
@@ -188,7 +198,24 @@ class VNPayController {
             console.log(JSON.stringify(vnp_Params, null, 2));
             console.log('========================================');
             
-            const signData = querystring.stringify(vnp_Params, { encode: false });
+            // Đảm bảo tất cả giá trị là primitive (string, number) trước khi tạo query string
+            // VNPay không chấp nhận object trong params
+            const cleanParams = {};
+            for (const key in vnp_Params) {
+                if (vnp_Params[key] !== null && vnp_Params[key] !== undefined) {
+                    const value = vnp_Params[key];
+                    // Convert tất cả về primitive
+                    if (typeof value === 'object' && !Array.isArray(value)) {
+                        console.error(`❌ ERROR: Param ${key} is object! Value:`, value);
+                        // Nếu là object, bỏ qua hoặc convert thành string
+                        cleanParams[key] = JSON.stringify(value);
+                    } else {
+                        cleanParams[key] = value;
+                    }
+                }
+            }
+            
+            const signData = querystring.stringify(cleanParams, { encode: false });
             
             // ✅ 11. Log chi tiết từng field
             console.log('=== VNPay Payment URL Creation - DETAILED LOG ===');
@@ -218,13 +245,31 @@ class VNPayController {
             // Lưu ý quan trọng:
             // - Signature đã được tính trên giá trị GỐC (không encode) ✅
             // - VNPay yêu cầu: Khi tạo URL, các giá trị phải được encode đúng cách
-            // - querystring.stringify với encode: true sẽ tự động encode
-            // - Nhưng VNPay yêu cầu encode theo chuẩn URL encoding
+            // - VNPay yêu cầu encode theo chuẩn URL encoding (encodeURIComponent)
             
             // Tạo query string - VNPay yêu cầu encode các giá trị
-            // Sử dụng querystring.stringify với encode: true để tự động encode
-            const queryString = querystring.stringify(vnp_Params, { encode: true });
+            // Sử dụng cleanParams (đã có signature) để tạo URL
+            // Đảm bảo tất cả giá trị đều là primitive
+            vnp_Params['vnp_SecureHash'] = signed; // Thêm signature vào vnp_Params
+            cleanParams['vnp_SecureHash'] = signed; // Thêm signature vào cleanParams
+            
+            const queryParts = [];
+            for (const key in cleanParams) {
+                if (cleanParams[key] !== null && cleanParams[key] !== undefined) {
+                    const value = cleanParams[key];
+                    // Convert tất cả giá trị thành string và encode
+                    const stringValue = String(value);
+                    const encodedValue = encodeURIComponent(stringValue);
+                    queryParts.push(`${key}=${encodedValue}`);
+                }
+            }
+            const queryString = queryParts.join('&');
             const vnpUrl = vnp_Url + '?' + queryString;
+            
+            // Log để debug
+            console.log('Query Parts Count:', queryParts.length);
+            console.log('Query String Sample (first 300 chars):', queryString.substring(0, 300));
+            console.log('Full Query String:', queryString);
             
             // Log để debug
             console.log('Query String (first 200 chars):', queryString.substring(0, 200));
@@ -635,11 +680,28 @@ class VNPayController {
 
             // ✅ 10. Tạo query string để ký (KHÔNG encode khi tính signature)
             const querystring = require('querystring');
-            const signData = querystring.stringify(vnp_Params, { encode: false });
+            
+            // Đảm bảo tất cả giá trị là primitive (string, number) trước khi tạo query string
+            const cleanParams = {};
+            for (const key in vnp_Params) {
+                if (vnp_Params[key] !== null && vnp_Params[key] !== undefined) {
+                    const value = vnp_Params[key];
+                    // Convert tất cả về primitive
+                    if (typeof value === 'object' && !Array.isArray(value)) {
+                        console.error(`❌ ERROR: Param ${key} is object! Value:`, value);
+                        cleanParams[key] = JSON.stringify(value);
+                    } else {
+                        cleanParams[key] = value;
+                    }
+                }
+            }
+            
+            const signData = querystring.stringify(cleanParams, { encode: false });
             
             // ✅ 11. Log toàn bộ params để debug
             console.log('=== VNPay QR Code URL Creation - FULL PARAMS ===');
             console.log('All vnp_Params BEFORE signing:', JSON.stringify(vnp_Params, null, 2));
+            console.log('Clean Params:', JSON.stringify(cleanParams, null, 2));
             console.log('Sign Data (string to hash):', signData);
             console.log('vnp_Amount (type):', typeof vnp_Params['vnp_Amount'], 'value:', vnp_Params['vnp_Amount']);
             console.log('vnp_CreateDate:', vnp_Params['vnp_CreateDate'], 'length:', vnp_Params['vnp_CreateDate'].length);
@@ -647,10 +709,29 @@ class VNPayController {
             // ✅ 12. Tạo SHA512 signature
             const hmac = crypto.createHmac("sha512", vnp_HashSecret);
             const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex");
+            
+            // Thêm signature vào cleanParams
+            cleanParams['vnp_SecureHash'] = signed;
             vnp_Params['vnp_SecureHash'] = signed;
             
             // ✅ 13. Tạo URL cuối cùng - VNPay yêu cầu encode các giá trị
-            const vnpUrl = vnp_Url + '?' + querystring.stringify(vnp_Params, { encode: true });
+            // Sử dụng cleanParams để đảm bảo không có object nào
+            const queryParts = [];
+            for (const key in cleanParams) {
+                if (cleanParams[key] !== null && cleanParams[key] !== undefined) {
+                    const value = cleanParams[key];
+                    // Convert tất cả giá trị thành string và encode
+                    const stringValue = String(value);
+                    const encodedValue = encodeURIComponent(stringValue);
+                    queryParts.push(`${key}=${encodedValue}`);
+                }
+            }
+            const queryString = queryParts.join('&');
+            const vnpUrl = vnp_Url + '?' + queryString;
+            
+            // Log để debug
+            console.log('Query Parts Count:', queryParts.length);
+            console.log('Query String Sample (first 300 chars):', queryString.substring(0, 300));
             
             console.log('VNPay QR URL created successfully');
             
