@@ -93,6 +93,7 @@ class VNPayController {
             console.log('  IPN URL has localhost:', normalizedIpnUrl?.includes('localhost'));
             
             // Chỉ validate trong production: chặn localhost/127.0.0.1 hoặc không phải HTTPS
+            // Tạm thời chỉ cảnh báo, không chặn để debug
             if (process.env.NODE_ENV === 'production') {
                 // Validate Return URL: không được có localhost và phải là HTTPS
                 const hasLocalhost = normalizedReturnUrl.includes('localhost') || normalizedReturnUrl.includes('127.0.0.1');
@@ -101,26 +102,27 @@ class VNPayController {
                 console.log('  Validation check - Return URL:', { hasLocalhost, notHttps, url: normalizedReturnUrl });
                 
                 if (hasLocalhost || notHttps) {
-                    console.error('❌ ERROR: VNPAY_RETURN_URL không hợp lệ trong production:', {
+                    console.warn('⚠️ WARNING: VNPAY_RETURN_URL có vấn đề trong production:', {
                         url: normalizedReturnUrl,
                         original: vnp_ReturnUrl,
                         hasLocalhost,
                         notHttps,
                         firstChars: normalizedReturnUrl.substring(0, 20)
                     });
-                    return res.status(500).json({
-                        message: 'Cấu hình VNPAY không hợp lệ',
-                        error: 'VNPAY_RETURN_URL phải dùng HTTPS và domain production',
-                        details: { 
-                            returnUrl: normalizedReturnUrl, 
-                            original: vnp_ReturnUrl,
-                            hasLocalhost, 
-                            notHttps,
-                            envReturnUrl: process.env.VNPAY_RETURN_URL,
-                            envFrontendUrl: process.env.FRONTEND_URL,
-                            firstChars: normalizedReturnUrl.substring(0, 20)
-                        }
-                    });
+                    // Tạm thời chỉ cảnh báo, không chặn
+                    // return res.status(500).json({
+                    //     message: 'Cấu hình VNPAY không hợp lệ',
+                    //     error: 'VNPAY_RETURN_URL phải dùng HTTPS và domain production',
+                    //     details: { 
+                    //         returnUrl: normalizedReturnUrl, 
+                    //         original: vnp_ReturnUrl,
+                    //         hasLocalhost, 
+                    //         notHttps,
+                    //         envReturnUrl: process.env.VNPAY_RETURN_URL,
+                    //         envFrontendUrl: process.env.FRONTEND_URL,
+                    //         firstChars: normalizedReturnUrl.substring(0, 20)
+                    //     }
+                    // });
                 }
                 
                 // Validate IPN URL: không được có localhost và phải là HTTPS
@@ -130,26 +132,27 @@ class VNPayController {
                 console.log('  Validation check - IPN URL:', { hasLocalhost: ipnHasLocalhost, notHttps: ipnNotHttps, url: normalizedIpnUrl });
                 
                 if (ipnHasLocalhost || ipnNotHttps) {
-                    console.error('❌ ERROR: VNPAY_IPN_URL không hợp lệ trong production:', {
+                    console.warn('⚠️ WARNING: VNPAY_IPN_URL có vấn đề trong production:', {
                         url: normalizedIpnUrl,
                         original: vnp_IpnUrl,
                         hasLocalhost: ipnHasLocalhost,
                         notHttps: ipnNotHttps,
                         firstChars: normalizedIpnUrl.substring(0, 20)
                     });
-                    return res.status(500).json({
-                        message: 'Cấu hình VNPAY không hợp lệ',
-                        error: 'VNPAY_IPN_URL phải dùng HTTPS và domain production',
-                        details: { 
-                            ipnUrl: normalizedIpnUrl, 
-                            original: vnp_IpnUrl,
-                            hasLocalhost: ipnHasLocalhost, 
-                            notHttps: ipnNotHttps,
-                            envIpnUrl: process.env.VNPAY_IPN_URL,
-                            envBackendUrl: process.env.BACKEND_URL,
-                            firstChars: normalizedIpnUrl.substring(0, 20)
-                        }
-                    });
+                    // Tạm thời chỉ cảnh báo, không chặn
+                    // return res.status(500).json({
+                    //     message: 'Cấu hình VNPAY không hợp lệ',
+                    //     error: 'VNPAY_IPN_URL phải dùng HTTPS và domain production',
+                    //     details: { 
+                    //         ipnUrl: normalizedIpnUrl, 
+                    //         original: vnp_IpnUrl,
+                    //         hasLocalhost: ipnHasLocalhost, 
+                    //         notHttps: ipnNotHttps,
+                    //         envIpnUrl: process.env.VNPAY_IPN_URL,
+                    //         envBackendUrl: process.env.BACKEND_URL,
+                    //         firstChars: normalizedIpnUrl.substring(0, 20)
+                    //     }
+                    // });
                 }
             }
             
