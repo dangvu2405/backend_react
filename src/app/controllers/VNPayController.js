@@ -51,10 +51,12 @@ class VNPayController {
             const vnp_HashSecret = process.env.VNPAY_HASH_SECRET || '';
             const vnp_Url = process.env.VNPAY_URL || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
             // Return URL: URL mà VNPay sẽ redirect về sau khi thanh toán
+            // ⚠️ BẮT BUỘC: Phải dùng HTTPS và domain production, KHÔNG được dùng localhost
             const vnp_ReturnUrl = process.env.VNPAY_RETURN_URL || 
-                `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return`;
+                `${process.env.FRONTEND_URL || 'https://dtv2405.id.vn'}/payment/vnpay-return`;
             // IPN URL: URL mà VNPay sẽ gọi server-to-server để thông báo kết quả
-            const backendUrl = process.env.BACKEND_URL || process.env.API_URL || 'http://localhost:3001';
+            // ⚠️ BẮT BUỘC: Phải dùng HTTPS và domain production, KHÔNG được dùng localhost
+            const backendUrl = process.env.BACKEND_URL || process.env.API_URL || 'https://backend-ks46.onrender.com';
             const vnp_IpnUrl = process.env.VNPAY_IPN_URL || 
                 `${backendUrl}/api/payment/vnpay/ipn`;
             
@@ -63,6 +65,24 @@ class VNPayController {
                     message: 'Cấu hình VNPAY chưa đầy đủ',
                     error: 'VNPAY_TMN_CODE và VNPAY_HASH_SECRET là bắt buộc'
                 });
+            }
+            
+            // Validate URLs - Đảm bảo không dùng localhost trong production
+            if (process.env.NODE_ENV === 'production') {
+                if (vnp_ReturnUrl.includes('localhost') || vnp_ReturnUrl.includes('127.0.0.1') || !vnp_ReturnUrl.startsWith('https://')) {
+                    console.error('❌ ERROR: VNPAY_RETURN_URL không hợp lệ trong production:', vnp_ReturnUrl);
+                    return res.status(500).json({
+                        message: 'Cấu hình VNPAY không hợp lệ',
+                        error: 'VNPAY_RETURN_URL phải dùng HTTPS và domain production'
+                    });
+                }
+                if (vnp_IpnUrl.includes('localhost') || vnp_IpnUrl.includes('127.0.0.1') || !vnp_IpnUrl.startsWith('https://')) {
+                    console.error('❌ ERROR: VNPAY_IPN_URL không hợp lệ trong production:', vnp_IpnUrl);
+                    return res.status(500).json({
+                        message: 'Cấu hình VNPAY không hợp lệ',
+                        error: 'VNPAY_IPN_URL phải dùng HTTPS và domain production'
+                    });
+                }
             }
 
             // Tạo mã giao dịch
@@ -561,10 +581,12 @@ class VNPayController {
             const vnp_HashSecret = process.env.VNPAY_HASH_SECRET || '';
             const vnp_Url = process.env.VNPAY_URL || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
             // Return URL: URL mà VNPay sẽ redirect về sau khi thanh toán
+            // ⚠️ BẮT BUỘC: Phải dùng HTTPS và domain production, KHÔNG được dùng localhost
             const vnp_ReturnUrl = process.env.VNPAY_RETURN_URL || 
-                `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return`;
+                `${process.env.FRONTEND_URL || 'https://dtv2405.id.vn'}/payment/vnpay-return`;
             // IPN URL: URL mà VNPay sẽ gọi server-to-server để thông báo kết quả
-            const backendUrl = process.env.BACKEND_URL || process.env.API_URL || 'http://localhost:3001';
+            // ⚠️ BẮT BUỘC: Phải dùng HTTPS và domain production, KHÔNG được dùng localhost
+            const backendUrl = process.env.BACKEND_URL || process.env.API_URL || 'https://backend-ks46.onrender.com';
             const vnp_IpnUrl = process.env.VNPAY_IPN_URL || 
                 `${backendUrl}/api/payment/vnpay/ipn`;
             
@@ -573,6 +595,24 @@ class VNPayController {
                     message: 'Cấu hình VNPAY chưa đầy đủ',
                     error: 'VNPAY_TMN_CODE và VNPAY_HASH_SECRET là bắt buộc'
                 });
+            }
+            
+            // Validate URLs - Đảm bảo không dùng localhost trong production
+            if (process.env.NODE_ENV === 'production') {
+                if (vnp_ReturnUrl.includes('localhost') || vnp_ReturnUrl.includes('127.0.0.1') || !vnp_ReturnUrl.startsWith('https://')) {
+                    console.error('❌ ERROR: VNPAY_RETURN_URL không hợp lệ trong production:', vnp_ReturnUrl);
+                    return res.status(500).json({
+                        message: 'Cấu hình VNPAY không hợp lệ',
+                        error: 'VNPAY_RETURN_URL phải dùng HTTPS và domain production'
+                    });
+                }
+                if (vnp_IpnUrl.includes('localhost') || vnp_IpnUrl.includes('127.0.0.1') || !vnp_IpnUrl.startsWith('https://')) {
+                    console.error('❌ ERROR: VNPAY_IPN_URL không hợp lệ trong production:', vnp_IpnUrl);
+                    return res.status(500).json({
+                        message: 'Cấu hình VNPAY không hợp lệ',
+                        error: 'VNPAY_IPN_URL phải dùng HTTPS và domain production'
+                    });
+                }
             }
 
             // VNPay yêu cầu format: YYYYMMDDHHmmss (14 ký tự số)
