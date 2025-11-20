@@ -50,8 +50,13 @@ class VNPayController {
             const vnp_TmnCode = process.env.VNPAY_TMN_CODE || 'DEMOV210';
             const vnp_HashSecret = process.env.VNPAY_HASH_SECRET || '';
             const vnp_Url = process.env.VNPAY_URL || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
-            const vnp_ReturnUrl = process.env.VNPAY_RETURN_URL || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return`;
-            const vnp_IpnUrl = process.env.VNPAY_IPN_URL || `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/payment/vnpay/ipn`;
+            // Return URL: URL mà VNPay sẽ redirect về sau khi thanh toán
+            const vnp_ReturnUrl = process.env.VNPAY_RETURN_URL || 
+                `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return`;
+            // IPN URL: URL mà VNPay sẽ gọi server-to-server để thông báo kết quả
+            const backendUrl = process.env.BACKEND_URL || process.env.API_URL || 'http://localhost:3001';
+            const vnp_IpnUrl = process.env.VNPAY_IPN_URL || 
+                `${backendUrl}/api/payment/vnpay/ipn`;
             
             if (!vnp_TmnCode || !vnp_HashSecret) {
                 return res.status(500).json({
@@ -212,29 +217,13 @@ class VNPayController {
             // ✅ 13. Tạo URL cuối cùng
             // Lưu ý quan trọng:
             // - Signature đã được tính trên giá trị GỐC (không encode) ✅
-            // - Khi tạo URL, VNPay yêu cầu encode các giá trị để URL hợp lệ
-            // - Nhưng querystring.stringify với encode: false sẽ KHÔNG encode
-            // - Vì vậy ta cần encode thủ công các giá trị string
+            // - VNPay yêu cầu: Khi tạo URL, các giá trị phải được encode đúng cách
+            // - querystring.stringify với encode: true sẽ tự động encode
+            // - Nhưng VNPay yêu cầu encode theo chuẩn URL encoding
             
-            // Tạo URL params với encoding đúng cách
-            let urlParams = {};
-            for (const key in vnp_Params) {
-                if (vnp_Params[key] !== null && vnp_Params[key] !== undefined) {
-                    const value = vnp_Params[key];
-                    // Encode các giá trị string (đặc biệt là vnp_OrderInfo, vnp_ReturnUrl, vnp_IpnUrl)
-                    // Các giá trị số không cần encode
-                    if (typeof value === 'string') {
-                        // Encode string values để URL hợp lệ
-                        urlParams[key] = encodeURIComponent(value);
-                    } else {
-                        // Convert số thành string (không encode)
-                        urlParams[key] = String(value);
-                    }
-                }
-            }
-            
-            // Tạo query string - dùng encode: false vì ta đã encode thủ công
-            const queryString = querystring.stringify(urlParams, { encode: false });
+            // Tạo query string - VNPay yêu cầu encode các giá trị
+            // Sử dụng querystring.stringify với encode: true để tự động encode
+            const queryString = querystring.stringify(vnp_Params, { encode: true });
             const vnpUrl = vnp_Url + '?' + queryString;
             
             // Log để debug
@@ -526,8 +515,13 @@ class VNPayController {
             const vnp_TmnCode = process.env.VNPAY_TMN_CODE || 'DEMOV210';
             const vnp_HashSecret = process.env.VNPAY_HASH_SECRET || '';
             const vnp_Url = process.env.VNPAY_URL || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
-            const vnp_ReturnUrl = process.env.VNPAY_RETURN_URL || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return`;
-            const vnp_IpnUrl = process.env.VNPAY_IPN_URL || `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/payment/vnpay/ipn`;
+            // Return URL: URL mà VNPay sẽ redirect về sau khi thanh toán
+            const vnp_ReturnUrl = process.env.VNPAY_RETURN_URL || 
+                `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return`;
+            // IPN URL: URL mà VNPay sẽ gọi server-to-server để thông báo kết quả
+            const backendUrl = process.env.BACKEND_URL || process.env.API_URL || 'http://localhost:3001';
+            const vnp_IpnUrl = process.env.VNPAY_IPN_URL || 
+                `${backendUrl}/api/payment/vnpay/ipn`;
             
             if (!vnp_TmnCode || !vnp_HashSecret) {
                 return res.status(500).json({
@@ -655,8 +649,8 @@ class VNPayController {
             const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex");
             vnp_Params['vnp_SecureHash'] = signed;
             
-            // ✅ 13. Tạo URL cuối cùng - VNPay yêu cầu KHÔNG encode (theo mẫu chuẩn)
-            const vnpUrl = vnp_Url + '?' + querystring.stringify(vnp_Params, { encode: false });
+            // ✅ 13. Tạo URL cuối cùng - VNPay yêu cầu encode các giá trị
+            const vnpUrl = vnp_Url + '?' + querystring.stringify(vnp_Params, { encode: true });
             
             console.log('VNPay QR URL created successfully');
             

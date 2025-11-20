@@ -31,7 +31,11 @@ services:
       - key: VNPAY_URL
         value: https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
       - key: VNPAY_RETURN_URL
-        value: https://dtv2405.id.vn/vnpay-return
+        value: https://dtv2405.id.vn/payment/vnpay-return
+      - key: BACKEND_URL
+        value: https://backend-ks46.onrender.com
+      - key: VNPAY_IPN_URL
+        value: https://backend-ks46.onrender.com/api/payment/vnpay/ipn
       - key: SESSION_SECRET
         sync: false
 
