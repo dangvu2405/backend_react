@@ -52,13 +52,41 @@ class VNPayController {
             const vnp_Url = process.env.VNPAY_URL || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
             // Return URL: URL mà VNPay sẽ redirect về sau khi thanh toán
             // ⚠️ BẮT BUỘC: Phải dùng HTTPS và domain production, KHÔNG được dùng localhost
-            const vnp_ReturnUrl = process.env.VNPAY_RETURN_URL || 
-                `${process.env.FRONTEND_URL || 'https://dtv2405.id.vn'}/payment/vnpay-return`;
+            let vnp_ReturnUrl = process.env.VNPAY_RETURN_URL;
+            if (!vnp_ReturnUrl) {
+                const frontendUrl = (process.env.FRONTEND_URL || 'https://dtv2405.id.vn').trim().replace(/\/+$/, ''); // Remove trailing slashes
+                // Đảm bảo không có localhost
+                if (frontendUrl.includes('localhost') || frontendUrl.includes('127.0.0.1')) {
+                    vnp_ReturnUrl = 'https://dtv2405.id.vn/payment/vnpay-return';
+                } else {
+                    vnp_ReturnUrl = `${frontendUrl}/payment/vnpay-return`;
+                }
+            }
+            // Normalize URL: trim, remove spaces, remove double slashes, remove localhost
+            vnp_ReturnUrl = vnp_ReturnUrl.trim().replace(/\s+/g, '').replace(/\/+/g, '/').replace(/:\/([^/])/, '://$1');
+            if (vnp_ReturnUrl.includes('localhost') || vnp_ReturnUrl.includes('127.0.0.1')) {
+                console.warn('⚠️ WARNING: vnp_ReturnUrl có localhost, thay thế bằng production URL');
+                vnp_ReturnUrl = 'https://dtv2405.id.vn/payment/vnpay-return';
+            }
+            
             // IPN URL: URL mà VNPay sẽ gọi server-to-server để thông báo kết quả
             // ⚠️ BẮT BUỘC: Phải dùng HTTPS và domain production, KHÔNG được dùng localhost
-            const backendUrl = process.env.BACKEND_URL || process.env.API_URL || 'https://backend-ks46.onrender.com';
-            const vnp_IpnUrl = process.env.VNPAY_IPN_URL || 
-                `${backendUrl}/api/payment/vnpay/ipn`;
+            let backendUrl = process.env.BACKEND_URL || process.env.API_URL;
+            if (!backendUrl || backendUrl.includes('localhost') || backendUrl.includes('127.0.0.1')) {
+                backendUrl = 'https://backend-ks46.onrender.com';
+            }
+            backendUrl = backendUrl.trim().replace(/\/+$/, ''); // Remove trailing slashes
+            
+            let vnp_IpnUrl = process.env.VNPAY_IPN_URL;
+            if (!vnp_IpnUrl) {
+                vnp_IpnUrl = `${backendUrl}/api/payment/vnpay/ipn`;
+            }
+            // Normalize URL: trim, remove spaces, remove double slashes, remove localhost
+            vnp_IpnUrl = vnp_IpnUrl.trim().replace(/\s+/g, '').replace(/\/+/g, '/').replace(/:\/([^/])/, '://$1');
+            if (vnp_IpnUrl.includes('localhost') || vnp_IpnUrl.includes('127.0.0.1')) {
+                console.warn('⚠️ WARNING: vnp_IpnUrl có localhost, thay thế bằng production URL');
+                vnp_IpnUrl = 'https://backend-ks46.onrender.com/api/payment/vnpay/ipn';
+            }
             
             if (!vnp_TmnCode || !vnp_HashSecret) {
                 return res.status(500).json({
