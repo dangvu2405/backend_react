@@ -38,19 +38,42 @@ const allowedOrigins = [
 const corsOptions = {
     origin: function (origin, callback) {
         // Allow requests with no origin (like mobile apps or curl)
-        if (!origin) return callback(null, true);
+        if (!origin) {
+            console.log('🌐 CORS: Request with no origin - allowing');
+            return callback(null, true);
+        }
+        
+        console.log('🌐 CORS: Checking origin:', origin);
+        console.log('🌐 CORS: Allowed origins:', allowedOrigins);
         
         // Check if origin is allowed
         if (allowedOrigins.indexOf(origin) !== -1) {
+            console.log('✅ CORS: Origin allowed');
             callback(null, true);
         } else {
-            callback(new Error('Not allowed by CORS'));
+            // Check if origin matches any allowed origin pattern (for subdomains)
+            const isAllowed = allowedOrigins.some(allowed => {
+                // Check exact match
+                if (origin === allowed) return true;
+                // Check if origin is subdomain of allowed
+                if (allowed && origin.endsWith(allowed.replace('https://', '').replace('http://', ''))) return true;
+                return false;
+            });
+            
+            if (isAllowed) {
+                console.log('✅ CORS: Origin allowed (pattern match)');
+                callback(null, true);
+            } else {
+                console.error('❌ CORS: Origin not allowed:', origin);
+                console.error('❌ CORS: Allowed origins:', allowedOrigins);
+                callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
+            }
         }
     },
     credentials: true,
     optionsSuccessStatus: 200,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 };
 app.use(cors(corsOptions));
 // ============================================
@@ -121,6 +144,15 @@ app.use((req, res) => {
 // Error handler
 app.use((err, req, res, next) => {
     console.error('Error:', err);
+    
+    // Handle CORS errors specifically
+    if (err.message && err.message.includes('CORS')) {
+        console.error('❌ CORS Error:', err.message);
+        console.error('   Request origin:', req.headers.origin);
+        console.error('   Request method:', req.method);
+        console.error('   Request path:', req.path);
+    }
+    
     res.status(err.status || 500).json({
         success: false,
         message: err.message || 'Internal Server Error',
