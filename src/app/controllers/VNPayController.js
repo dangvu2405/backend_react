@@ -69,48 +69,94 @@ class VNPayController {
             
             // Validate URLs - Đảm bảo không dùng localhost trong production
             // Log để debug
-            console.log('🔍 VNPay QR URL Validation:');
+            console.log('🔍 VNPay URL Validation (createPaymentUrl):');
             console.log('  NODE_ENV:', process.env.NODE_ENV);
-            console.log('  VNPAY_RETURN_URL:', vnp_ReturnUrl);
-            console.log('  VNPAY_IPN_URL:', vnp_IpnUrl);
+            console.log('  process.env.VNPAY_RETURN_URL:', process.env.VNPAY_RETURN_URL);
+            console.log('  process.env.FRONTEND_URL:', process.env.FRONTEND_URL);
+            console.log('  process.env.BACKEND_URL:', process.env.BACKEND_URL);
+            console.log('  process.env.VNPAY_IPN_URL:', process.env.VNPAY_IPN_URL);
+            console.log('  Final vnp_ReturnUrl:', vnp_ReturnUrl);
+            console.log('  Final vnp_IpnUrl:', vnp_IpnUrl);
+            console.log('  Return URL type:', typeof vnp_ReturnUrl);
+            console.log('  Return URL length:', vnp_ReturnUrl?.length);
+            console.log('  Return URL first 20 chars:', vnp_ReturnUrl?.substring(0, 20));
+            
+            // Normalize URLs - trim và đảm bảo là string
+            const normalizedReturnUrl = String(vnp_ReturnUrl || '').trim();
+            const normalizedIpnUrl = String(vnp_IpnUrl || '').trim();
+            
+            console.log('  Normalized Return URL:', normalizedReturnUrl);
+            console.log('  Normalized IPN URL:', normalizedIpnUrl);
+            console.log('  Return URL starts with https:', normalizedReturnUrl?.startsWith('https://'));
+            console.log('  IPN URL starts with https:', normalizedIpnUrl?.startsWith('https://'));
+            console.log('  Return URL has localhost:', normalizedReturnUrl?.includes('localhost'));
+            console.log('  IPN URL has localhost:', normalizedIpnUrl?.includes('localhost'));
             
             // Chỉ validate trong production: chặn localhost/127.0.0.1 hoặc không phải HTTPS
             if (process.env.NODE_ENV === 'production') {
                 // Validate Return URL: không được có localhost và phải là HTTPS
-                const hasLocalhost = vnp_ReturnUrl.includes('localhost') || vnp_ReturnUrl.includes('127.0.0.1');
-                const notHttps = !vnp_ReturnUrl.startsWith('https://');
+                const hasLocalhost = normalizedReturnUrl.includes('localhost') || normalizedReturnUrl.includes('127.0.0.1');
+                const notHttps = !normalizedReturnUrl.startsWith('https://');
+                
+                console.log('  Validation check - Return URL:', { hasLocalhost, notHttps, url: normalizedReturnUrl });
                 
                 if (hasLocalhost || notHttps) {
                     console.error('❌ ERROR: VNPAY_RETURN_URL không hợp lệ trong production:', {
-                        url: vnp_ReturnUrl,
+                        url: normalizedReturnUrl,
+                        original: vnp_ReturnUrl,
                         hasLocalhost,
-                        notHttps
+                        notHttps,
+                        firstChars: normalizedReturnUrl.substring(0, 20)
                     });
                     return res.status(500).json({
                         message: 'Cấu hình VNPAY không hợp lệ',
                         error: 'VNPAY_RETURN_URL phải dùng HTTPS và domain production',
-                        details: { returnUrl: vnp_ReturnUrl, hasLocalhost, notHttps }
+                        details: { 
+                            returnUrl: normalizedReturnUrl, 
+                            original: vnp_ReturnUrl,
+                            hasLocalhost, 
+                            notHttps,
+                            envReturnUrl: process.env.VNPAY_RETURN_URL,
+                            envFrontendUrl: process.env.FRONTEND_URL,
+                            firstChars: normalizedReturnUrl.substring(0, 20)
+                        }
                     });
                 }
                 
                 // Validate IPN URL: không được có localhost và phải là HTTPS
-                const ipnHasLocalhost = vnp_IpnUrl.includes('localhost') || vnp_IpnUrl.includes('127.0.0.1');
-                const ipnNotHttps = !vnp_IpnUrl.startsWith('https://');
+                const ipnHasLocalhost = normalizedIpnUrl.includes('localhost') || normalizedIpnUrl.includes('127.0.0.1');
+                const ipnNotHttps = !normalizedIpnUrl.startsWith('https://');
+                
+                console.log('  Validation check - IPN URL:', { hasLocalhost: ipnHasLocalhost, notHttps: ipnNotHttps, url: normalizedIpnUrl });
                 
                 if (ipnHasLocalhost || ipnNotHttps) {
                     console.error('❌ ERROR: VNPAY_IPN_URL không hợp lệ trong production:', {
-                        url: vnp_IpnUrl,
+                        url: normalizedIpnUrl,
+                        original: vnp_IpnUrl,
                         hasLocalhost: ipnHasLocalhost,
-                        notHttps: ipnNotHttps
+                        notHttps: ipnNotHttps,
+                        firstChars: normalizedIpnUrl.substring(0, 20)
                     });
                     return res.status(500).json({
                         message: 'Cấu hình VNPAY không hợp lệ',
                         error: 'VNPAY_IPN_URL phải dùng HTTPS và domain production',
-                        details: { ipnUrl: vnp_IpnUrl, hasLocalhost: ipnHasLocalhost, notHttps: ipnNotHttps }
+                        details: { 
+                            ipnUrl: normalizedIpnUrl, 
+                            original: vnp_IpnUrl,
+                            hasLocalhost: ipnHasLocalhost, 
+                            notHttps: ipnNotHttps,
+                            envIpnUrl: process.env.VNPAY_IPN_URL,
+                            envBackendUrl: process.env.BACKEND_URL,
+                            firstChars: normalizedIpnUrl.substring(0, 20)
+                        }
                     });
                 }
             }
-
+            
+            // Sử dụng normalized URLs cho params
+            const finalReturnUrl = normalizedReturnUrl;
+            const finalIpnUrl = normalizedIpnUrl;
+            
             // Tạo mã giao dịch
             // VNPay yêu cầu format: YYYYMMDDHHmmss (14 ký tự số)
             const date = new Date();
