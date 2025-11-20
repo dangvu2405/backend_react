@@ -598,19 +598,32 @@ class VNPayController {
             }
             
             // Validate URLs - Đảm bảo không dùng localhost trong production
+            // Log để debug
+            console.log('🔍 VNPay QR URL Validation:');
+            console.log('  NODE_ENV:', process.env.NODE_ENV);
+            console.log('  VNPAY_RETURN_URL:', vnp_ReturnUrl);
+            console.log('  VNPAY_IPN_URL:', vnp_IpnUrl);
+            
+            // Chỉ validate trong production và nếu URL thực sự có vấn đề
             if (process.env.NODE_ENV === 'production') {
-                if (vnp_ReturnUrl.includes('localhost') || vnp_ReturnUrl.includes('127.0.0.1') || !vnp_ReturnUrl.startsWith('https://')) {
+                // Chỉ validate nếu URL có localhost hoặc không phải HTTPS
+                const returnUrlInvalid = (vnp_ReturnUrl.includes('localhost') || vnp_ReturnUrl.includes('127.0.0.1')) && !vnp_ReturnUrl.startsWith('https://');
+                const ipnUrlInvalid = (vnp_IpnUrl.includes('localhost') || vnp_IpnUrl.includes('127.0.0.1')) && !vnp_IpnUrl.startsWith('https://');
+                
+                if (returnUrlInvalid) {
                     console.error('❌ ERROR: VNPAY_RETURN_URL không hợp lệ trong production:', vnp_ReturnUrl);
                     return res.status(500).json({
                         message: 'Cấu hình VNPAY không hợp lệ',
-                        error: 'VNPAY_RETURN_URL phải dùng HTTPS và domain production'
+                        error: 'VNPAY_RETURN_URL phải dùng HTTPS và domain production',
+                        details: { returnUrl: vnp_ReturnUrl }
                     });
                 }
-                if (vnp_IpnUrl.includes('localhost') || vnp_IpnUrl.includes('127.0.0.1') || !vnp_IpnUrl.startsWith('https://')) {
+                if (ipnUrlInvalid) {
                     console.error('❌ ERROR: VNPAY_IPN_URL không hợp lệ trong production:', vnp_IpnUrl);
                     return res.status(500).json({
                         message: 'Cấu hình VNPAY không hợp lệ',
-                        error: 'VNPAY_IPN_URL phải dùng HTTPS và domain production'
+                        error: 'VNPAY_IPN_URL phải dùng HTTPS và domain production',
+                        details: { ipnUrl: vnp_IpnUrl }
                     });
                 }
             }
