@@ -216,12 +216,12 @@ class VNPayController {
             // ✅ 6. vnp_IpAddr: Phải có giá trị, không được null
             vnp_Params['vnp_IpAddr'] = ipAddr;
             
-            // ✅ 7. URLs
-            vnp_Params['vnp_ReturnUrl'] = vnp_ReturnUrl;
+            // ✅ 7. URLs - Sử dụng normalized URLs
+            vnp_Params['vnp_ReturnUrl'] = finalReturnUrl;
             // vnp_IpnUrl: Tùy chọn, có thể cấu hình trong merchant dashboard hoặc gửi trong params
             // Nếu không gửi, VNPAY sẽ sử dụng IPN URL đã cấu hình trong merchant dashboard
-            if (vnp_IpnUrl) {
-                vnp_Params['vnp_IpnUrl'] = vnp_IpnUrl;
+            if (finalIpnUrl) {
+                vnp_Params['vnp_IpnUrl'] = finalIpnUrl;
             }
             
             // ✅ 8. vnp_BankCode: Tùy chọn - Mã phương thức thanh toán
