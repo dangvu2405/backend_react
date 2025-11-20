@@ -431,7 +431,7 @@ class VNPayController {
             
             if (!vnp_HashSecret) {
                 console.error('Return: VNPAY_HASH_SECRET not configured');
-                return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return?status=fail&message=Server configuration error`);
+                return res.redirect(`${process.env.FRONTEND_URL || 'https://dtv2405.id.vn'}/payment/vnpay-return?status=fail&message=Server configuration error`);
             }
 
             // Loại bỏ vnp_SecureHash và vnp_SecureHashType
@@ -450,13 +450,13 @@ class VNPayController {
             // Xác minh chữ ký
             if (secureHash !== signed) {
                 console.error('Invalid VNPay Return signature:', { secureHash, signed });
-                return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return?status=fail&message=Invalid signature`);
+                return res.redirect(`${process.env.FRONTEND_URL || 'https://dtv2405.id.vn'}/payment/vnpay-return?status=fail&message=Invalid signature`);
             }
 
             // Extract orderId from transaction reference (format: orderId_timestamp)
             const txnRef = vnp_Params['vnp_TxnRef'];
             if (!txnRef) {
-                return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return?status=fail&message=Missing transaction reference`);
+                return res.redirect(`${process.env.FRONTEND_URL || 'https://dtv2405.id.vn'}/payment/vnpay-return?status=fail&message=Missing transaction reference`);
             }
 
             // vnp_TxnRef có thể là orderId hoặc orderId_timestamp
@@ -469,14 +469,14 @@ class VNPayController {
             const order = await DonHang.findById(orderId);
             if (!order) {
                 console.error('Order not found:', orderId);
-                return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return?status=fail&message=Order not found`);
+                return res.redirect(`${process.env.FRONTEND_URL || 'https://dtv2405.id.vn'}/payment/vnpay-return?status=fail&message=Order not found`);
             }
 
             // Kiểm tra số tiền (bao gồm phí vận chuyển)
             const totalAmount = (order.TongTien || 0) + (order.PhiVanChuyen || 0);
             if (Math.abs(amount - totalAmount) > 0.01) {
                 console.error('Amount mismatch:', { amount, totalAmount, orderId });
-                return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return?status=fail&message=Amount mismatch`);
+                return res.redirect(`${process.env.FRONTEND_URL || 'https://dtv2405.id.vn'}/payment/vnpay-return?status=fail&message=Amount mismatch`);
             }
 
             // Xử lý kết quả thanh toán
@@ -499,7 +499,7 @@ class VNPayController {
                     }
                 });
 
-                return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return?status=success&orderId=${orderId}`);
+                return res.redirect(`${process.env.FRONTEND_URL || 'https://dtv2405.id.vn'}/payment/vnpay-return?status=success&orderId=${orderId}`);
             } else {
                 // Thanh toán thất bại
                 await DonHang.findByIdAndUpdate(orderId, {
@@ -511,11 +511,11 @@ class VNPayController {
                     }
                 });
 
-                return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return?status=fail&orderId=${orderId}&code=${rspCode}`);
+                return res.redirect(`${process.env.FRONTEND_URL || 'https://dtv2405.id.vn'}/payment/vnpay-return?status=fail&orderId=${orderId}&code=${rspCode}`);
             }
         } catch (error) {
             console.error('Lỗi khi xử lý callback VNPay:', error);
-            return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/vnpay-return?status=fail&message=Server error`);
+                return res.redirect(`${process.env.FRONTEND_URL || 'https://dtv2405.id.vn'}/payment/vnpay-return?status=fail&message=Server error`);
         }
     }
 
