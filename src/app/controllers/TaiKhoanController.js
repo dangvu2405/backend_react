@@ -1,13 +1,11 @@
 const Role = require('../models/Role');
 const mongoose = require('mongoose');
 const TaiKhoan = require('../models/Taikhoan');
-const DonHang = require('../models/DonHang');
 const { hashPassword, comparePassword } = require('../../utils/password');
 const { successResponse, errorResponse, paginatedResponse } = require('../../utils/response');
 const { HTTP_STATUS, MESSAGES, PAGINATION } = require('../../constants');
 
 class TaiKhoanController {
-    // tạo tài khoản mới
     async createUser(req, res) {
         try {
             const { 
@@ -22,14 +20,12 @@ class TaiKhoanController {
                 ngaySinh 
             } = req.body;
 
-            // Validate required fields
             if (!hoten || !tenDangNhap || !email || !matKhau || !maVaiTro) {
                 return res.status(400).json({ 
                     message: 'Vui lòng nhập đầy đủ thông tin bắt buộc: HoTen, TenDangNhap, Email, MatKhau, MaVaiTro' 
                 });
             }
 
-            // Check if username or email already exists
             const existingUser = await TaiKhoan.findOne({
                 $or: [
                     { TenDangNhap: tenDangNhap },
@@ -45,10 +41,7 @@ class TaiKhoanController {
                 });
             }
 
-            // Hash password
             const hashedPassword = await hashPassword(matKhau);
-
-            // Prepare user data
             const userData = {
                 HoTen: hoten.trim(),
                 TenDangNhap: tenDangNhap.trim(),
@@ -63,8 +56,6 @@ class TaiKhoanController {
             };
 
             const user = await TaiKhoan.create(userData);
-            
-            // Remove password from response
             const userResponse = user.toObject();
             delete userResponse.MatKhau;
 
@@ -300,6 +291,7 @@ class TaiKhoanController {
 
             const cloudinaryService = require('../../services/cloudinary.service');
             let avatarUrl;
+            let avatarId = null;
 
             // Upload lên Cloudinary nếu được cấu hình
             if (cloudinaryService.isCloudinaryConfigured()) {
@@ -312,10 +304,8 @@ class TaiKhoanController {
                         ]
                     });
                     
-                    // Lưu Public ID vào database (frontend sẽ tự build URL)
-                    avatarUrl = result.public_id;
-                    
-                    console.log('✅ Avatar uploaded to Cloudinary:', result.public_id);
+                    avatarUrl = result.url;
+                    avatarId = result.public_id;
                 } catch (cloudinaryError) {
                     console.error('❌ Cloudinary upload failed, falling back to local:', cloudinaryError);
                     // Fallback to local storage
@@ -330,26 +320,30 @@ class TaiKhoanController {
                     // Save buffer to file
                     fs.writeFileSync(filePath, req.file.buffer);
                     avatarUrl = `/uploads/${filename}`;
+                    avatarId = null;
                 }
             } else {
                 // Local storage (disk storage)
                 avatarUrl = `/uploads/${req.file.filename}`;
+                avatarId = null;
             }
 
             // Xóa avatar cũ nếu có
             const user = await TaiKhoan.findById(userId);
-            if (user && user.AvatarUrl) {
-                // Nếu là Cloudinary public_id, xóa từ Cloudinary
-                if (cloudinaryService.isCloudinaryConfigured() && !user.AvatarUrl.startsWith('http') && !user.AvatarUrl.startsWith('/')) {
+            if (user && (user.AvatarUrl || user.AvatarId)) {
+                const isCloudinaryAvatar =
+                    cloudinaryService.isCloudinaryConfigured() &&
+                    (user.AvatarId || (user.AvatarUrl && user.AvatarUrl.includes('cloudinary.com')));
+
+                if (isCloudinaryAvatar && user.AvatarId) {
                     try {
-                        await cloudinaryService.deleteFromCloudinary(user.AvatarUrl);
-                        console.log('✅ Deleted old avatar from Cloudinary');
+                        await cloudinaryService.deleteFromCloudinary(user.AvatarId);
                     } catch (err) {
-                        console.error('⚠️  Error deleting old Cloudinary avatar:', err);
+                        console.error('Error deleting old Cloudinary avatar:', err);
                     }
                 } 
                 // Nếu là local file, xóa file local
-                else if (!user.AvatarUrl.startsWith('http') && user.AvatarUrl.startsWith('/uploads')) {
+                else if (user.AvatarUrl && user.AvatarUrl.startsWith('/uploads')) {
                     const fs = require('fs');
                     const path = require('path');
                     const oldAvatarPath = path.join(__dirname, '../../..', user.AvatarUrl);
@@ -366,7 +360,7 @@ class TaiKhoanController {
             // Cập nhật avatar trong database
             const updatedUser = await TaiKhoan.findByIdAndUpdate(
                 userId, 
-                { $set: { AvatarUrl: avatarUrl } }, 
+                { $set: { AvatarUrl: avatarUrl, AvatarId: avatarId } }, 
                 { new: true, runValidators: true }
             )
                 .select('-MatKhau')

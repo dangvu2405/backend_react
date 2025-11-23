@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const DanhGiaController = require('../app/controllers/DanhGiaController');
 const authMiddleware = require('../app/middlewares/auth.middleware');
+const { reviewLimiter } = require('../app/middlewares/rateLimit.middleware');
 
 // ============================================
 // PUBLIC ROUTES (không cần đăng nhập)
@@ -15,7 +16,7 @@ router.get('/product/:productId/stats', DanhGiaController.getProductRatingStats)
 // ============================================
 
 // Tạo đánh giá mới
-router.post('/', authMiddleware, DanhGiaController.createReview);
+router.post('/', authMiddleware, reviewLimiter, DanhGiaController.createReview);
 
 // Lấy đánh giá của user cho sản phẩm (đặt trước route tổng quát)
 router.get('/product/:productId/my-review', authMiddleware, DanhGiaController.getMyReview);
@@ -31,7 +32,7 @@ router.get('/product/:productId', DanhGiaController.getProductReviews);
 router.get('/my-reviews', authMiddleware, DanhGiaController.getMyReviews);
 
 // Cập nhật đánh giá
-router.put('/:id', authMiddleware, DanhGiaController.updateReview);
+router.put('/:id', authMiddleware, reviewLimiter, DanhGiaController.updateReview);
 
 // Xóa đánh giá
 router.delete('/:id', authMiddleware, DanhGiaController.deleteReview);

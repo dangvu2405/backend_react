@@ -13,6 +13,8 @@ const TaiKhoan = require('../models/Taikhoan');
 const DonHang = require('../models/DonHang');
 const DanhGia = require('../models/DanhGia');
 const Voucher = require('../models/Voucher');
+const { HTTP_STATUS, MESSAGES } = require('../../constants');
+const { successResponse, errorResponse } = require('../../utils/response');
 
 class AdminController {
     // ==========================
@@ -628,7 +630,8 @@ class AdminController {
                 DanhGia.countDocuments(filter)
             ]);
 
-            return res.status(200).json({
+            return res.status(HTTP_STATUS.OK).json({
+                success: true,
                 message: 'Lấy danh sách đánh giá thành công',
                 data: reviews,
                 pagination: {
@@ -640,10 +643,7 @@ class AdminController {
             });
         } catch (error) {
             console.error('Lỗi khi lấy danh sách đánh giá:', error);
-            return res.status(500).json({
-                message: 'Lỗi khi lấy danh sách đánh giá',
-                error: error.message
-            });
+            return errorResponse(res, 'Lỗi khi lấy danh sách đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -667,21 +667,13 @@ class AdminController {
                 .lean();
 
             if (!review) {
-                return res.status(404).json({
-                    message: 'Không tìm thấy đánh giá'
-                });
+                return errorResponse(res, MESSAGES.NOT_FOUND, HTTP_STATUS.NOT_FOUND);
             }
 
-            return res.status(200).json({
-                message: 'Lấy chi tiết đánh giá thành công',
-                data: review
-            });
+            return successResponse(res, review, 'Lấy chi tiết đánh giá thành công');
         } catch (error) {
             console.error('Lỗi khi lấy chi tiết đánh giá:', error);
-            return res.status(500).json({
-                message: 'Lỗi khi lấy chi tiết đánh giá',
-                error: error.message
-            });
+            return errorResponse(res, 'Lỗi khi lấy chi tiết đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -694,30 +686,21 @@ class AdminController {
             const { id } = req.params;
 
             if (!mongoose.Types.ObjectId.isValid(id)) {
-                return res.status(400).json({
-                    message: 'ID đánh giá không hợp lệ'
-                });
+                return errorResponse(res, 'ID đánh giá không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
 
             const review = await DanhGia.findById(id);
 
             if (!review) {
-                return res.status(404).json({
-                    message: 'Không tìm thấy đánh giá'
-                });
+                return errorResponse(res, 'Không tìm thấy đánh giá', HTTP_STATUS.NOT_FOUND);
             }
 
             await review.deleteOne();
 
-            return res.status(200).json({
-                message: 'Xóa đánh giá thành công'
-            });
+            return successResponse(res, null, 'Xóa đánh giá thành công');
         } catch (error) {
             console.error('Lỗi khi xóa đánh giá:', error);
-            return res.status(500).json({
-                message: 'Lỗi khi xóa đánh giá',
-                error: error.message
-            });
+            return errorResponse(res, 'Lỗi khi xóa đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -730,33 +713,23 @@ class AdminController {
             const { reviewIds } = req.body;
 
             if (!Array.isArray(reviewIds) || reviewIds.length === 0) {
-                return res.status(400).json({
-                    message: 'Vui lòng cung cấp danh sách ID đánh giá'
-                });
+                return errorResponse(res, 'Vui lòng cung cấp danh sách ID đánh giá', HTTP_STATUS.BAD_REQUEST);
             }
 
             // Validate all IDs
             const validIds = reviewIds.filter(id => mongoose.Types.ObjectId.isValid(id));
             if (validIds.length === 0) {
-                return res.status(400).json({
-                    message: 'Không có ID đánh giá hợp lệ'
-                });
+                return errorResponse(res, 'Không có ID đánh giá hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
 
             const result = await DanhGia.deleteMany({
                 _id: { $in: validIds }
             });
 
-            return res.status(200).json({
-                message: `Đã xóa ${result.deletedCount} đánh giá thành công`,
-                deletedCount: result.deletedCount
-            });
+            return successResponse(res, { deletedCount: result.deletedCount }, `Đã xóa ${result.deletedCount} đánh giá thành công`);
         } catch (error) {
             console.error('Lỗi khi xóa nhiều đánh giá:', error);
-            return res.status(500).json({
-                message: 'Lỗi khi xóa nhiều đánh giá',
-                error: error.message
-            });
+            return errorResponse(res, 'Lỗi khi xóa nhiều đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -852,30 +825,24 @@ class AdminController {
                 star1: 0
             };
 
-            return res.status(200).json({
-                message: 'Thống kê đánh giá thành công',
-                data: {
-                    summary: {
-                        totalReviews: result.totalReviews,
-                        avgRating: Math.round(result.avgRating * 100) / 100,
-                        distribution: {
-                            star5: result.star5,
-                            star4: result.star4,
-                            star3: result.star3,
-                            star2: result.star2,
-                            star1: result.star1
-                        }
-                    },
-                    topReviewedProducts,
-                    monthlyStats: formattedMonthlyStats
-                }
-            });
+            return successResponse(res, {
+                summary: {
+                    totalReviews: result.totalReviews,
+                    avgRating: Math.round(result.avgRating * 100) / 100,
+                    distribution: {
+                        star5: result.star5,
+                        star4: result.star4,
+                        star3: result.star3,
+                        star2: result.star2,
+                        star1: result.star1
+                    }
+                },
+                topReviewedProducts,
+                monthlyStats: formattedMonthlyStats
+            }, 'Thống kê đánh giá thành công');
         } catch (error) {
             console.error('Lỗi khi thống kê đánh giá:', error);
-            return res.status(500).json({
-                message: 'Lỗi khi thống kê đánh giá',
-                error: error.message
-            });
+            return errorResponse(res, 'Lỗi khi thống kê đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
 

@@ -35,6 +35,32 @@ const VoucherSchema = new mongoose.Schema({
     NgayTao: {
         type: Date,
         required: [true, 'Ngày tạo voucher là bắt buộc'],
+        default: Date.now
+    },
+    NgayHetHan: {
+        type: Date,
+        required: [true, 'Ngày hết hạn voucher là bắt buộc'],
+        validate: {
+            validator: function(value) {
+                // ✅ So sánh với NgayTao hoặc createdAt
+                const ngayTao = this.NgayTao || this.createdAt || new Date();
+                return value && value > ngayTao;
+            },
+            message: 'Ngày hết hạn phải sau ngày tạo'
+        }
+    },
+    TrangThai: {
+        type: String,
+        enum: {
+            values: ['active', 'inactive', 'expired'],
+            message: 'Trạng thái không hợp lệ'
+        },
+        default: 'active'
+    },
+    GiaTriToiThieu: {
+        type: Number,
+        default: 0,
+        min: [0, 'Giá trị tối thiểu không được âm']
     }
 }, {
     timestamps: false,

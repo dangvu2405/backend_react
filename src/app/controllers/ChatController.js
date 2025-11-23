@@ -11,13 +11,27 @@ class ChatController {
      * Get or create chat room for customer
      * Customer tạo hoặc lấy chat room của mình
      */
-    async getOrCreateChatRoom(req, res) {
+    getOrCreateChatRoom = async (req, res) => {
         try {
-            const customerId = req.user.id || req.user._id;
+            // ✅ Lấy customerId từ req.user (đã được set bởi authMiddleware)
+            const customerId = req.user?.id || req.user?._id?.toString() || req.user?._id;
+            
+            if (!customerId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Vui lòng đăng nhập'
+                });
+            }
+
+            // ✅ Convert sang ObjectId nếu cần
+            const mongoose = require('mongoose');
+            const customerObjectId = mongoose.Types.ObjectId.isValid(customerId)
+                ? new mongoose.Types.ObjectId(customerId)
+                : customerId;
             
             // Tìm chat room hiện tại của customer
             let chatRoom = await ChatRoom.findOne({
-                CustomerId: customerId,
+                CustomerId: customerObjectId,
                 Status: { $in: ['pending', 'active'] }
             }).populate('AdminId', 'HoTen Email AvatarUrl')
               .populate('CustomerId', 'HoTen Email AvatarUrl');
@@ -25,7 +39,7 @@ class ChatController {
             // Nếu chưa có, tạo mới
             if (!chatRoom) {
                 chatRoom = await ChatRoom.create({
-                    CustomerId: customerId,
+                    CustomerId: customerObjectId,
                     Status: 'pending'
                 });
                 
@@ -38,20 +52,21 @@ class ChatController {
                 data: chatRoom
             });
         } catch (error) {
-            console.error('Error in getOrCreateChatRoom:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Error in getOrCreateChatRoom:', error);
+            }
             return res.status(500).json({
                 success: false,
-                message: 'Lỗi khi tạo hoặc lấy chat room',
-                error: error.message
+                message: 'Lỗi khi tạo hoặc lấy chat room: ' + error.message
             });
         }
-    }
+    };
 
     /**
      * Get all chat rooms for admin
      * Admin xem tất cả các chat rooms
      */
-    async getChatRooms(req, res) {
+    getChatRooms = async (req, res) => {
         try {
             const { status, page = 1, limit = 20 } = req.query;
             const skip = (page - 1) * limit;
@@ -81,19 +96,20 @@ class ChatController {
                 }
             });
         } catch (error) {
-            console.error('Error in getChatRooms:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Error in getChatRooms:', error);
+            }
             return res.status(500).json({
                 success: false,
-                message: 'Lỗi khi lấy danh sách chat rooms',
-                error: error.message
+                message: 'Lỗi khi lấy danh sách chat rooms: ' + error.message
             });
         }
-    }
+    };
 
     /**
      * Get chat room by ID
      */
-    async getChatRoomById(req, res) {
+    getChatRoomById = async (req, res) => {
         try {
             const { chatRoomId } = req.params;
             const userId = req.user.id || req.user._id;
@@ -125,19 +141,20 @@ class ChatController {
                 data: chatRoom
             });
         } catch (error) {
-            console.error('Error in getChatRoomById:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Error in getChatRoomById:', error);
+            }
             return res.status(500).json({
                 success: false,
-                message: 'Lỗi khi lấy chat room',
-                error: error.message
+                message: 'Lỗi khi lấy chat room: ' + error.message
             });
         }
-    }
+    };
 
     /**
      * Get messages for a chat room
      */
-    async getMessages(req, res) {
+    getMessages = async (req, res) => {
         try {
             const { chatRoomId } = req.params;
             const { page = 1, limit = 50 } = req.query;
@@ -186,20 +203,21 @@ class ChatController {
                 }
             });
         } catch (error) {
-            console.error('Error in getMessages:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Error in getMessages:', error);
+            }
             return res.status(500).json({
                 success: false,
-                message: 'Lỗi khi lấy tin nhắn',
-                error: error.message
+                message: 'Lỗi khi lấy tin nhắn: ' + error.message
             });
         }
-    }
+    };
 
     /**
      * Assign admin to chat room
      * Admin nhận chat room
      */
-    async assignAdmin(req, res) {
+    assignAdmin = async (req, res) => {
         try {
             const { chatRoomId } = req.params;
             const adminId = req.user.id || req.user._id;
@@ -225,19 +243,20 @@ class ChatController {
                 data: chatRoom
             });
         } catch (error) {
-            console.error('Error in assignAdmin:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Error in assignAdmin:', error);
+            }
             return res.status(500).json({
                 success: false,
-                message: 'Lỗi khi nhận chat room',
-                error: error.message
+                message: 'Lỗi khi nhận chat room: ' + error.message
             });
         }
-    }
+    };
 
     /**
      * Close chat room
      */
-    async closeChatRoom(req, res) {
+    closeChatRoom = async (req, res) => {
         try {
             const { chatRoomId } = req.params;
             const userId = req.user.id || req.user._id;
@@ -270,19 +289,20 @@ class ChatController {
                 data: chatRoom
             });
         } catch (error) {
-            console.error('Error in closeChatRoom:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Error in closeChatRoom:', error);
+            }
             return res.status(500).json({
                 success: false,
-                message: 'Lỗi khi đóng chat room',
-                error: error.message
+                message: 'Lỗi khi đóng chat room: ' + error.message
             });
         }
-    }
+    };
 
     /**
      * Mark messages as read
      */
-    async markAsRead(req, res) {
+    markAsRead = async (req, res) => {
         try {
             const { chatRoomId } = req.params;
             const userId = req.user.id || req.user._id;
@@ -328,20 +348,21 @@ class ChatController {
                 message: 'Đã đánh dấu đã đọc'
             });
         } catch (error) {
-            console.error('Error in markAsRead:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Error in markAsRead:', error);
+            }
             return res.status(500).json({
                 success: false,
-                message: 'Lỗi khi đánh dấu đã đọc',
-                error: error.message
+                message: 'Lỗi khi đánh dấu đã đọc: ' + error.message
             });
         }
-    }
+    };
 
     /**
      * Delete chat room
      * Xóa chat room và tất cả tin nhắn (admin only)
      */
-    async deleteChatRoom(req, res) {
+    deleteChatRoom = async (req, res) => {
         try {
             const { chatRoomId } = req.params;
             const userId = req.user.id || req.user._id;
@@ -376,14 +397,15 @@ class ChatController {
                 message: 'Đã xóa chat room thành công'
             });
         } catch (error) {
-            console.error('Error in deleteChatRoom:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Error in deleteChatRoom:', error);
+            }
             return res.status(500).json({
                 success: false,
-                message: 'Lỗi khi xóa chat room',
-                error: error.message
+                message: 'Lỗi khi xóa chat room: ' + error.message
             });
         }
-    }
+    };
 }
 
 module.exports = new ChatController();

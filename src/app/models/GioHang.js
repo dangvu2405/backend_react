@@ -7,10 +7,18 @@ const mongoose = require('mongoose');
  */
 const GioHangSchema = new mongoose.Schema({
     IdKhachHang: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Taikhoan',
+        type: mongoose.Schema.Types.Mixed, // ✅ Hỗ trợ cả ObjectId (user) và String (guest)
         required: [true, 'ID khách hàng là bắt buộc'],
-        unique: true // Mỗi khách hàng chỉ có 1 giỏ hàng
+        validate: {
+            validator: function(value) {
+                // Cho phép ObjectId hoặc string bắt đầu bằng 'guest-'
+                return mongoose.Types.ObjectId.isValid(value) || 
+                       (typeof value === 'string' && value.startsWith('guest-'));
+            },
+            message: 'ID khách hàng phải là ObjectId hợp lệ hoặc string bắt đầu bằng "guest-"'
+        },
+        unique: true, // Mỗi khách hàng chỉ có 1 giỏ hàng
+        sparse: true // Cho phép null/undefined để unique hoạt động với Mixed type
     },
     Items: [{
         IdSanPham: {

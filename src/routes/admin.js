@@ -2,111 +2,120 @@ const express = require('express');
 const router = express.Router();
 const AdminController = require('../app/controllers/AdminController');
 const adminMiddleware = require('../app/middlewares/admin.middleware');
+const authMiddleware = require('../app/middlewares/auth.middleware');
 
 // ==========================
 // PRODUCTS
 // ==========================
-router.post('/products', adminMiddleware, (req, res) => AdminController.createProduct(req, res));
-router.get('/products', adminMiddleware, (req, res) => AdminController.getAllProducts(req, res));
-router.get('/products/:id', adminMiddleware, (req, res) => AdminController.getProduct(req, res));
-router.put('/products/:id', adminMiddleware, (req, res) => AdminController.updateProduct(req, res));
-router.delete('/products/:id', adminMiddleware, (req, res) => AdminController.deleteProduct(req, res));
+router.post('/products', authMiddleware, adminMiddleware, AdminController.createProduct);
+router.get('/products', authMiddleware, adminMiddleware, AdminController.getAllProducts);
+router.get('/products/:id', authMiddleware, adminMiddleware, AdminController.getProduct);
+router.put('/products/:id', authMiddleware, adminMiddleware, AdminController.updateProduct);
+router.delete('/products/:id', authMiddleware, adminMiddleware, AdminController.deleteProduct);
 
 // ==========================
 // CATEGORIES
 // ==========================
-router.post('/categories', adminMiddleware, (req, res) => AdminController.createCategory(req, res));
-router.get('/categories', (req, res) => AdminController.getAllCategories(req, res)); // Không cần middleware
-router.get('/categories/:id', (req, res) => AdminController.getCategory(req, res)); // Không cần middleware
-router.put('/categories/:id', adminMiddleware, (req, res) => AdminController.updateCategory(req, res));
-router.delete('/categories/:id', adminMiddleware, (req, res) => AdminController.deleteCategory(req, res));
+router.post('/categories', authMiddleware, adminMiddleware, AdminController.createCategory);
+router.get('/categories', AdminController.getAllCategories); // Public - không cần middleware
+router.get('/categories/:id', AdminController.getCategory); // Public - không cần middleware
+router.put('/categories/:id', authMiddleware, adminMiddleware, AdminController.updateCategory);
+router.delete('/categories/:id', authMiddleware, adminMiddleware, AdminController.deleteCategory);
 
 // ==========================
 // ROLES
 // ==========================
-router.post('/roles', (req, res) => AdminController.createRole(req, res));
-router.get('/roles', (req, res) => AdminController.getAllRoles(req, res));
-router.get('/roles/:id', (req, res) => AdminController.getRole(req, res));
-router.put('/roles/:id', (req, res) => AdminController.updateRole(req, res));
-router.delete('/roles/:id', (req, res) => AdminController.deleteRole(req, res));
+router.post('/roles', authMiddleware, adminMiddleware, AdminController.createRole);
+router.get('/roles', authMiddleware, adminMiddleware, AdminController.getAllRoles);
+router.get('/roles/:id', authMiddleware, adminMiddleware, AdminController.getRole);
+router.put('/roles/:id', authMiddleware, adminMiddleware, AdminController.updateRole);
+router.delete('/roles/:id', authMiddleware, adminMiddleware, AdminController.deleteRole);
 
 // ==========================
 // USERS (self info endpoints from TaiKhoanController)
 // ==========================
-router.post('/users', (req, res) => AdminController.createUser(req, res));
-router.put('/users/:id', (req, res) => AdminController.updateUser(req, res));
-router.delete('/users/:id', (req, res) => AdminController.deleteUser(req, res));
-router.get('/users', (req, res) => AdminController.getAllUsers(req, res));
-router.get('/users/me', (req, res) => AdminController.getUser(req, res));
-router.put('/users/me', (req, res) => AdminController.updateUser(req, res));
-router.delete('/users/me', (req, res) => AdminController.deleteUser(req, res));
+// ✅ Đặt routes cụ thể (/users/me) TRƯỚC routes có params (/users/:id) để tránh conflict
+router.get('/users/me', authMiddleware, AdminController.getUser);
+router.put('/users/me', authMiddleware, AdminController.updateUser);
+router.delete('/users/me', authMiddleware, AdminController.deleteUser);
+
+router.post('/users', authMiddleware, adminMiddleware, AdminController.createUser);
+router.get('/users', authMiddleware, adminMiddleware, AdminController.getAllUsers);
+router.put('/users/:id', authMiddleware, adminMiddleware, AdminController.updateUser);
+router.delete('/users/:id', authMiddleware, adminMiddleware, AdminController.deleteUser);
 
 // ==========================
 // CUSTOMERS (only Customer role accounts)
 // ==========================
-router.get('/customers', (req, res) => AdminController.getCustomers(req, res));
-router.put('/customers/:id', (req, res) => AdminController.updateCustomer(req, res));
-router.delete('/customers/:id', (req, res) => AdminController.deleteCustomer(req, res));
-router.post('/customers/:id/lock', (req, res) => AdminController.lockCustomer(req, res));
-router.post('/customers/:id/change-role', (req, res) => AdminController.changeCustomerRole(req, res));
+router.get('/customers', authMiddleware, adminMiddleware, AdminController.getCustomers);
+router.put('/customers/:id', authMiddleware, adminMiddleware, AdminController.updateCustomer);
+router.delete('/customers/:id', authMiddleware, adminMiddleware, AdminController.deleteCustomer);
+router.post('/customers/:id/lock', authMiddleware, adminMiddleware, AdminController.lockCustomer);
+router.post('/customers/:id/change-role', authMiddleware, adminMiddleware, AdminController.changeCustomerRole);
 
 // ==========================
 // ORDERS
 // ==========================
-router.post('/orders', (req, res) => AdminController.createOrder(req, res));
-router.get('/orders', (req, res) => AdminController.getAllOrders(req, res));
-router.get('/orders/:id', (req, res) => AdminController.getOrder(req, res));
-router.put('/orders/:id', (req, res) => AdminController.updateOrder(req, res));
-router.delete('/orders/:id', (req, res) => AdminController.deleteOrder(req, res));
-router.post('/orders/:id/cancel', (req, res) => AdminController.cancelOrder(req, res));
-router.post('/orders/checkout', (req, res) => AdminController.checkout(req, res));
+// ✅ Đặt route cụ thể (/orders/checkout) TRƯỚC route có params (/orders/:id) để tránh conflict
+router.post('/orders/checkout', authMiddleware, adminMiddleware, AdminController.checkout);
+
+router.post('/orders', authMiddleware, adminMiddleware, AdminController.createOrder);
+router.get('/orders', authMiddleware, adminMiddleware, AdminController.getAllOrders);
+router.get('/orders/:id', authMiddleware, adminMiddleware, AdminController.getOrder);
+router.put('/orders/:id', authMiddleware, adminMiddleware, AdminController.updateOrder);
+router.delete('/orders/:id', authMiddleware, adminMiddleware, AdminController.deleteOrder);
+router.post('/orders/:id/cancel', authMiddleware, adminMiddleware, AdminController.cancelOrder);
 
 // ==========================
 // CART
 // ==========================
-router.post('/cart/items', (req, res) => AdminController.addToCart(req, res));
-router.get('/cart', (req, res) => AdminController.getCart(req, res));
-router.put('/cart/items/:id', (req, res) => AdminController.updateCart(req, res));
-router.delete('/cart/items/:id', (req, res) => AdminController.deleteCartItem(req, res));
-router.delete('/cart', (req, res) => AdminController.clearCart(req, res));
+// ✅ Đặt route cụ thể (/cart) TRƯỚC route có params (/cart/items/:id) để tránh conflict
+router.post('/cart/items', authMiddleware, adminMiddleware, AdminController.addToCart);
+router.get('/cart', authMiddleware, adminMiddleware, AdminController.getCart);
+router.delete('/cart', authMiddleware, adminMiddleware, AdminController.clearCart);
+router.put('/cart/items/:id', authMiddleware, adminMiddleware, AdminController.updateCart);
+router.delete('/cart/items/:id', authMiddleware, adminMiddleware, AdminController.deleteCartItem);
 
 // ==========================
 // INVENTORY
 // ==========================
-router.get('/inventory', (req, res) => AdminController.getInventory(req, res));
-router.get('/inventory/:id', (req, res) => AdminController.getInventoryItem(req, res));
-router.post('/inventory/:id/increase', (req, res) => AdminController.increaseStock(req, res));
-router.post('/inventory/:id/decrease', (req, res) => AdminController.decreaseStock(req, res));
-router.put('/inventory/:id', (req, res) => AdminController.setStock(req, res));
-router.delete('/inventory/:id', (req, res) => AdminController.clearStock(req, res));
+// ✅ Đặt routes cụ thể (/inventory/:id/increase, /inventory/:id/decrease) TRƯỚC route tổng quát (/inventory/:id)
+router.get('/inventory', authMiddleware, adminMiddleware, AdminController.getInventory);
+router.post('/inventory/:id/increase', authMiddleware, adminMiddleware, AdminController.increaseStock);
+router.post('/inventory/:id/decrease', authMiddleware, adminMiddleware, AdminController.decreaseStock);
+router.get('/inventory/:id', authMiddleware, adminMiddleware, AdminController.getInventoryItem);
+router.put('/inventory/:id', authMiddleware, adminMiddleware, AdminController.setStock);
+router.delete('/inventory/:id', authMiddleware, adminMiddleware, AdminController.clearStock);
 
 // ==========================
 // STATISTICS
 // ==========================
-router.get('/stats/summary', (req, res) => AdminController.getSummaryStats(req, res));
-router.get('/stats/revenue', (req, res) => AdminController.getRevenueStats(req, res));
-router.get('/stats/top-products', (req, res) => AdminController.getTopSellingProducts(req, res));
-router.get('/stats/low-stock', (req, res) => AdminController.getLowStockProducts(req, res));
-router.get('/stats/monthly-orders', (req, res) => AdminController.getMonthlyOrdersStats(req, res));
-router.get('/stats/top-customers', (req, res) => AdminController.getTopCustomersByOrders(req, res));
+router.get('/stats/summary', authMiddleware, adminMiddleware, AdminController.getSummaryStats);
+router.get('/stats/revenue', authMiddleware, adminMiddleware, AdminController.getRevenueStats);
+router.get('/stats/top-products', authMiddleware, adminMiddleware, AdminController.getTopSellingProducts);
+router.get('/stats/low-stock', authMiddleware, adminMiddleware, AdminController.getLowStockProducts);
+router.get('/stats/monthly-orders', authMiddleware, adminMiddleware, AdminController.getMonthlyOrdersStats);
+router.get('/stats/top-customers', authMiddleware, adminMiddleware, AdminController.getTopCustomersByOrders);
 
 // ==========================
 // REVIEWS (ĐÁNH GIÁ)
 // ==========================
-router.get('/reviews', (req, res) => AdminController.getAllReviews(req, res));
-router.get('/reviews/stats', (req, res) => AdminController.getReviewStats(req, res));
-router.get('/reviews/:id', (req, res) => AdminController.getReview(req, res));
-router.delete('/reviews/:id', (req, res) => AdminController.deleteReview(req, res));
-router.delete('/reviews', (req, res) => AdminController.deleteMultipleReviews(req, res));
+// ✅ Đặt route cụ thể (/reviews/stats) và route không có params (/reviews) TRƯỚC route có params (/reviews/:id)
+router.get('/reviews/stats', authMiddleware, adminMiddleware, AdminController.getReviewStats);
+router.get('/reviews', authMiddleware, adminMiddleware, AdminController.getAllReviews);
+router.delete('/reviews', authMiddleware, adminMiddleware, AdminController.deleteMultipleReviews);
+router.get('/reviews/:id', authMiddleware, adminMiddleware, AdminController.getReview);
+router.delete('/reviews/:id', authMiddleware, adminMiddleware, AdminController.deleteReview);
 
 // ==========================
 // VOUCHERS (MÃ GIẢM GIÁ)
 // ==========================
-router.post('/vouchers', adminMiddleware, (req, res) => AdminController.createVoucher(req, res));
-router.get('/vouchers', adminMiddleware, (req, res) => AdminController.getAllVouchers(req, res));
-router.get('/vouchers/stats', adminMiddleware, (req, res) => AdminController.getVoucherStats(req, res));
-router.get('/vouchers/:id', adminMiddleware, (req, res) => AdminController.getVoucher(req, res));
-router.put('/vouchers/:id', adminMiddleware, (req, res) => AdminController.updateVoucher(req, res));
-router.delete('/vouchers/:id', adminMiddleware, (req, res) => AdminController.deleteVoucher(req, res));
+// ✅ Đặt route cụ thể (/vouchers/stats) TRƯỚC route có params (/vouchers/:id) để tránh conflict
+router.post('/vouchers', authMiddleware, adminMiddleware, AdminController.createVoucher);
+router.get('/vouchers/stats', authMiddleware, adminMiddleware, AdminController.getVoucherStats);
+router.get('/vouchers', authMiddleware, adminMiddleware, AdminController.getAllVouchers);
+router.get('/vouchers/:id', authMiddleware, adminMiddleware, AdminController.getVoucher);
+router.put('/vouchers/:id', authMiddleware, adminMiddleware, AdminController.updateVoucher);
+router.delete('/vouchers/:id', authMiddleware, adminMiddleware, AdminController.deleteVoucher);
 
 module.exports = router;

@@ -1,73 +1,105 @@
 const DanhGia = require('../models/DanhGia');
 const SanPham = require('../models/SanPham');
 const mongoose = require('mongoose');
+const { HTTP_STATUS, MESSAGES } = require('../../constants');
+const { successResponse, errorResponse } = require('../../utils/response');
 
 class DanhGiaController {
+    /**
+     * Helper: Lấy user ID từ request
+     */
+    getUserId(req) {
+        // ✅ Hỗ trợ nhiều format: req.user.id, req.user._id (ObjectId hoặc string)
+        if (req.user?._id) {
+            return typeof req.user._id === 'object' && req.user._id.toString 
+                ? req.user._id.toString() 
+                : req.user._id;
+        }
+        if (req.user?.id) {
+            return typeof req.user.id === 'object' && req.user.id.toString 
+                ? req.user.id.toString() 
+                : req.user.id;
+        }
+        return null;
+    }
+
+    /**
+     * Helper: Validate rating
+     */
+    validateRating(rating) {
+        const numRating = parseInt(rating);
+        if (isNaN(numRating) || numRating < 1 || numRating > 5 || !Number.isInteger(numRating)) {
+            return { valid: false, error: 'Số sao phải là số nguyên từ 1 đến 5' };
+        }
+        return { valid: true, value: numRating };
+    }
+
     /**
      * Tạo đánh giá mới
      * POST /api/reviews
      */
-    async createReview(req, res) {
+    createReview = async (req, res) => {
         try {
             const { IdSanPham, NoiDung, SoSao } = req.body;
-            const IdKhachHang = req.user?.id;
+            const IdKhachHang = this.getUserId(req);
 
-            // Validate
-            if (!IdSanPham || !NoiDung || !SoSao) {
-                return res.status(400).json({
-                    message: 'Vui lòng nhập đầy đủ thông tin đánh giá'
-                });
+            // ✅ Validate input
+            if (!IdSanPham || !NoiDung || SoSao === undefined) {
+                return errorResponse(res, 'Vui lòng nhập đầy đủ thông tin đánh giá', HTTP_STATUS.BAD_REQUEST);
             }
 
             if (!IdKhachHang) {
-                return res.status(401).json({
-                    message: 'Vui lòng đăng nhập để đánh giá'
-                });
+                return errorResponse(res, 'Vui lòng đăng nhập để đánh giá', HTTP_STATUS.UNAUTHORIZED);
             }
 
-            // Kiểm tra sản phẩm tồn tại
+            // ✅ Validate SoSao
+            const ratingValidation = this.validateRating(SoSao);
+            if (!ratingValidation.valid) {
+                return errorResponse(res, ratingValidation.error, HTTP_STATUS.BAD_REQUEST);
+            }
+            const rating = ratingValidation.value;
+
+            // ✅ Validate IdSanPham
+            if (!mongoose.Types.ObjectId.isValid(IdSanPham)) {
+                return errorResponse(res, 'ID sản phẩm không hợp lệ', HTTP_STATUS.BAD_REQUEST);
+            }
+
+            // ✅ Kiểm tra sản phẩm tồn tại
             const product = await SanPham.findById(IdSanPham);
             if (!product) {
-                return res.status(404).json({
-                    message: 'Không tìm thấy sản phẩm'
-                });
+                return errorResponse(res, MESSAGES.PRODUCT_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
             }
 
-            // Kiểm tra đã đánh giá chưa
+            // ✅ Kiểm tra đã đánh giá chưa
             const existingReview = await DanhGia.findOne({
                 IdSanPham,
                 IdKhachHang
             });
 
             if (existingReview) {
-                return res.status(400).json({
-                    message: 'Bạn đã đánh giá sản phẩm này rồi'
-                });
+                return errorResponse(res, 'Bạn đã đánh giá sản phẩm này rồi. Vui lòng cập nhật đánh giá hiện tại.', HTTP_STATUS.BAD_REQUEST);
             }
 
-            // Tạo đánh giá mới
+            // ✅ Tạo đánh giá
             const review = await DanhGia.create({
                 IdSanPham,
                 IdKhachHang,
-                NoiDung,
-                SoSao: parseInt(SoSao)
+                NoiDung: NoiDung.trim(),
+                SoSao: rating
             });
 
-            // Populate thông tin khách hàng
             await review.populate('IdKhachHang', 'HoTen AvatarUrl');
 
-            return res.status(201).json({
-                message: 'Đánh giá thành công',
-                data: review
-            });
+            return successResponse(res, review, 'Đánh giá thành công', HTTP_STATUS.CREATED);
         } catch (error) {
-            console.error('Lỗi khi tạo đánh giá:', error);
-            return res.status(500).json({
-                message: 'Lỗi khi tạo đánh giá',
-                error: error.message
-            });
+            if (error.name === 'ValidationError') {
+                const errors = Object.values(error.errors).map(err => err.message);
+                return errorResponse(res, 'Dữ liệu không hợp lệ: ' + errors.join(', '), HTTP_STATUS.BAD_REQUEST);
+            }
+
+            return errorResponse(res, 'Lỗi khi tạo đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
-    }
+    };
 
     /**
      * Lấy danh sách đánh giá của sản phẩm
@@ -78,12 +110,8 @@ class DanhGiaController {
             const { productId } = req.params;
             const { page = 1, limit = 10, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
 
-            console.log('📥 Getting reviews for product:', productId);
-
             if (!mongoose.Types.ObjectId.isValid(productId)) {
-                return res.status(400).json({
-                    message: 'ID sản phẩm không hợp lệ'
-                });
+                return errorResponse(res, 'ID sản phẩm không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
 
             const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -100,25 +128,17 @@ class DanhGiaController {
                 DanhGia.countDocuments({ IdSanPham: productId })
             ]);
 
-            console.log('✅ Found reviews:', reviews.length, 'Total:', total);
-            console.log('📝 Sample review:', reviews[0]);
-
-            return res.status(200).json({
-                message: 'Lấy danh sách đánh giá thành công',
-                data: reviews,
+            return successResponse(res, {
+                reviews,
                 pagination: {
                     page: parseInt(page),
                     limit: parseInt(limit),
                     total,
                     totalPages: Math.ceil(total / parseInt(limit))
                 }
-            });
+            }, 'Lấy danh sách đánh giá thành công');
         } catch (error) {
-            console.error('❌ Lỗi khi lấy danh sách đánh giá:', error);
-            return res.status(500).json({
-                message: 'Lỗi khi lấy danh sách đánh giá',
-                error: error.message
-            });
+            return errorResponse(res, 'Lỗi khi lấy danh sách đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -130,29 +150,15 @@ class DanhGiaController {
         try {
             const { productId } = req.params;
 
-            console.log('📊 Getting stats for product:', productId);
-
             if (!mongoose.Types.ObjectId.isValid(productId)) {
-                return res.status(400).json({
-                    message: 'ID sản phẩm không hợp lệ'
-                });
+                return errorResponse(res, 'ID sản phẩm không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
 
             const stats = await DanhGia.getProductRatingStats(productId);
 
-            console.log('✅ Stats result:', stats);
-
-            return res.status(200).json({
-                message: 'Lấy thống kê đánh giá thành công',
-                data: stats
-            });
+            return successResponse(res, stats, 'Lấy thống kê đánh giá thành công');
         } catch (error) {
-            console.error('❌ Lỗi khi lấy thống kê đánh giá:', error);
-            console.error('Error stack:', error.stack);
-            return res.status(500).json({
-                message: 'Lỗi khi lấy thống kê đánh giá',
-                error: error.message
-            });
+            return errorResponse(res, 'Lỗi khi lấy thống kê đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -160,162 +166,155 @@ class DanhGiaController {
      * Lấy đánh giá của user hiện tại cho sản phẩm
      * GET /api/reviews/product/:productId/my-review
      */
-    async getMyReview(req, res) {
+    getMyReview = async (req, res) => {
         try {
             const { productId } = req.params;
-            // req.user là user object từ database, có _id chứ không phải id
-            const IdKhachHang = req.user?._id?.toString() || req.user?.id?.toString();
-
-            console.log('getMyReview - User:', {
-                hasUser: !!req.user,
-                userId: IdKhachHang,
-                productId: productId
-            });
+            const IdKhachHang = this.getUserId(req);
 
             if (!IdKhachHang) {
-                return res.status(401).json({
-                    message: 'Vui lòng đăng nhập'
-                });
+                return errorResponse(res, 'Vui lòng đăng nhập', HTTP_STATUS.UNAUTHORIZED);
             }
 
             if (!mongoose.Types.ObjectId.isValid(productId)) {
-                return res.status(400).json({
-                    message: 'ID sản phẩm không hợp lệ'
-                });
+                return errorResponse(res, 'ID sản phẩm không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
 
+            // ✅ Convert IdKhachHang sang ObjectId để query đúng
+            const userIdObjectId = mongoose.Types.ObjectId.isValid(IdKhachHang) 
+                ? new mongoose.Types.ObjectId(IdKhachHang) 
+                : IdKhachHang;
+
             const review = await DanhGia.findOne({
-                IdSanPham: productId,
-                IdKhachHang
+                IdSanPham: new mongoose.Types.ObjectId(productId),
+                IdKhachHang: userIdObjectId
             }).populate('IdKhachHang', 'HoTen AvatarUrl Email');
 
             if (!review) {
-                return res.status(404).json({
-                    message: 'Bạn chưa đánh giá sản phẩm này'
-                });
+                // ✅ Trả về 404 thay vì error để frontend có thể handle (user chưa đánh giá)
+                return errorResponse(res, 'Bạn chưa đánh giá sản phẩm này', HTTP_STATUS.NOT_FOUND);
             }
 
-            return res.status(200).json({
-                message: 'Lấy đánh giá thành công',
-                data: review
-            });
+            return successResponse(res, review, 'Lấy đánh giá thành công');
         } catch (error) {
-            console.error('Lỗi khi lấy đánh giá:', error);
-            return res.status(500).json({
-                message: 'Lỗi khi lấy đánh giá',
-                error: error.message
-            });
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Error in getMyReview:', error);
+            }
+            return errorResponse(res, 'Lỗi khi lấy đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
-    }
+    };
 
     /**
      * Cập nhật đánh giá
      * PUT /api/reviews/:id
      */
-    async updateReview(req, res) {
+    updateReview = async (req, res) => {
         try {
             const { id } = req.params;
             const { NoiDung, SoSao } = req.body;
-            const IdKhachHang = req.user?.id;
+            const IdKhachHang = this.getUserId(req);
 
             if (!IdKhachHang) {
-                return res.status(401).json({
-                    message: 'Vui lòng đăng nhập'
-                });
+                return errorResponse(res, 'Vui lòng đăng nhập', HTTP_STATUS.UNAUTHORIZED);
+            }
+
+            // ✅ Validate ObjectId
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                return errorResponse(res, 'ID đánh giá không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
 
             const review = await DanhGia.findById(id);
 
             if (!review) {
-                return res.status(404).json({
-                    message: 'Không tìm thấy đánh giá'
-                });
+                return errorResponse(res, 'Không tìm thấy đánh giá', HTTP_STATUS.NOT_FOUND);
             }
 
             // Kiểm tra quyền sở hữu
             if (review.IdKhachHang.toString() !== IdKhachHang) {
-                return res.status(403).json({
-                    message: 'Bạn không có quyền chỉnh sửa đánh giá này'
-                });
+                return errorResponse(res, 'Bạn không có quyền chỉnh sửa đánh giá này', HTTP_STATUS.FORBIDDEN);
             }
 
-            // Update
-            if (NoiDung) review.NoiDung = NoiDung;
-            if (SoSao) review.SoSao = parseInt(SoSao);
+            // ✅ Validate và update
+            if (NoiDung !== undefined) {
+                const trimmedContent = NoiDung.trim();
+                if (trimmedContent.length < 10) {
+                    return errorResponse(res, 'Nội dung đánh giá phải có ít nhất 10 ký tự', HTTP_STATUS.BAD_REQUEST);
+                }
+                if (trimmedContent.length > 1000) {
+                    return errorResponse(res, 'Nội dung đánh giá không được quá 1000 ký tự', HTTP_STATUS.BAD_REQUEST);
+                }
+                review.NoiDung = trimmedContent;
+            }
 
-            await review.save();
+            if (SoSao !== undefined) {
+                const ratingValidation = this.validateRating(SoSao);
+                if (!ratingValidation.valid) {
+                    return errorResponse(res, ratingValidation.error, HTTP_STATUS.BAD_REQUEST);
+                }
+                review.SoSao = ratingValidation.value;
+            }
+
+            // ✅ Save với runValidators
+            await review.save({ runValidators: true });
             await review.populate('IdKhachHang', 'HoTen AvatarUrl Email');
 
-            return res.status(200).json({
-                message: 'Cập nhật đánh giá thành công',
-                data: review
-            });
+            return successResponse(res, review, 'Cập nhật đánh giá thành công');
         } catch (error) {
-            console.error('Lỗi khi cập nhật đánh giá:', error);
-            return res.status(500).json({
-                message: 'Lỗi khi cập nhật đánh giá',
-                error: error.message
-            });
+            if (error.name === 'ValidationError') {
+                const errors = Object.values(error.errors).map(err => err.message);
+                return errorResponse(res, 'Dữ liệu không hợp lệ: ' + errors.join(', '), HTTP_STATUS.BAD_REQUEST);
+            }
+            return errorResponse(res, 'Lỗi khi cập nhật đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
-    }
+    };
 
     /**
      * Xóa đánh giá
      * DELETE /api/reviews/:id
      */
-    async deleteReview(req, res) {
+    deleteReview = async (req, res) => {
         try {
             const { id } = req.params;
-            const IdKhachHang = req.user?.id;
+            const IdKhachHang = this.getUserId(req);
 
             if (!IdKhachHang) {
-                return res.status(401).json({
-                    message: 'Vui lòng đăng nhập'
-                });
+                return errorResponse(res, 'Vui lòng đăng nhập', HTTP_STATUS.UNAUTHORIZED);
+            }
+
+            // ✅ Validate ObjectId
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                return errorResponse(res, 'ID đánh giá không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
 
             const review = await DanhGia.findById(id);
 
             if (!review) {
-                return res.status(404).json({
-                    message: 'Không tìm thấy đánh giá'
-                });
+                return errorResponse(res, 'Không tìm thấy đánh giá', HTTP_STATUS.NOT_FOUND);
             }
 
             // Kiểm tra quyền sở hữu
             if (review.IdKhachHang.toString() !== IdKhachHang) {
-                return res.status(403).json({
-                    message: 'Bạn không có quyền xóa đánh giá này'
-                });
+                return errorResponse(res, 'Bạn không có quyền xóa đánh giá này', HTTP_STATUS.FORBIDDEN);
             }
 
             await review.deleteOne();
 
-            return res.status(200).json({
-                message: 'Xóa đánh giá thành công'
-            });
+            return successResponse(res, null, 'Xóa đánh giá thành công');
         } catch (error) {
-            console.error('Lỗi khi xóa đánh giá:', error);
-            return res.status(500).json({
-                message: 'Lỗi khi xóa đánh giá',
-                error: error.message
-            });
+            return errorResponse(res, 'Lỗi khi xóa đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
-    }
+    };
 
     /**
      * Lấy đánh giá của user
      * GET /api/reviews/my-reviews
      */
-    async getMyReviews(req, res) {
+    getMyReviews = async (req, res) => {
         try {
-            const IdKhachHang = req.user?.id;
+            const IdKhachHang = this.getUserId(req);
             const { page = 1, limit = 10 } = req.query;
 
             if (!IdKhachHang) {
-                return res.status(401).json({
-                    message: 'Vui lòng đăng nhập'
-                });
+                return errorResponse(res, 'Vui lòng đăng nhập', HTTP_STATUS.UNAUTHORIZED);
             }
 
             const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -330,24 +329,19 @@ class DanhGiaController {
                 DanhGia.countDocuments({ IdKhachHang })
             ]);
 
-            return res.status(200).json({
-                message: 'Lấy danh sách đánh giá thành công',
-                data: reviews,
+            return successResponse(res, {
+                reviews,
                 pagination: {
                     page: parseInt(page),
                     limit: parseInt(limit),
                     total,
                     totalPages: Math.ceil(total / parseInt(limit))
                 }
-            });
+            }, 'Lấy danh sách đánh giá thành công');
         } catch (error) {
-            console.error('Lỗi khi lấy danh sách đánh giá:', error);
-            return res.status(500).json({
-                message: 'Lỗi khi lấy danh sách đánh giá',
-                error: error.message
-            });
+            return errorResponse(res, 'Lỗi khi lấy danh sách đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
-    }
+    };
 }
 
 module.exports = new DanhGiaController();

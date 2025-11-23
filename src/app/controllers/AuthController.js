@@ -8,93 +8,100 @@ const { generateTokenPair, generateToken } = require('../../utils/token');
 const { successResponse, errorResponse } = require('../../utils/response');
 const { HTTP_STATUS, MESSAGES, JWT } = require('../../constants');
 
-// Helper function để normalize frontend URL (xóa trailing slash)
 const getFrontendUrl = () => {
     let url = (process.env.FRONTEND_URL || 'http://localhost:5173').trim();
-    return url.replace(/\/+$/, ''); // Xóa trailing slash
+    return url.replace(/\/+$/, '');
 };
 
 class AuthController {
-    // đăng nhập
     async login(req, res) {
         try {
             const { username, password } = req.body;
             if (!username || !password) {
                 return errorResponse(res, MESSAGES.ERROR, HTTP_STATUS.BAD_REQUEST);
             }
-            // Tìm user theo email hoặc username
+            
             const user = await TaiKhoan.findOne({
                 $or: [{ Email: username.toLowerCase() }, { TenDangNhap: username }]
             });
             if (!user) {
                 return errorResponse(res, MESSAGES.INVALID_CREDENTIALS, HTTP_STATUS.UNAUTHORIZED);
             }
-            // kiểm tra xem mật khẩu có khớp chưa
+            
             const isMatch = await comparePassword(password, user.MatKhau);
             if (!isMatch) {
                 return errorResponse(res, MESSAGES.INVALID_CREDENTIALS, HTTP_STATUS.UNAUTHORIZED);
             }
-            // tạo token pair
+            
             const tokens = generateTokenPair(user);
-            // tạo refresh token
             const refreshToken = crypto.randomBytes(32).toString('hex');
             const session = await Session.create({
                 userId: user._id,
                 refreshToken: refreshToken,
                 expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
             });
-            // lưu refresh token vào database
             await session.save();
-            // gửi refresh token về trong cookie
+            
             res.cookie('refreshToken', refreshToken, {
                 httpOnly: true, 
                 secure: process.env.NODE_ENV === 'production', 
                 maxAge: 7 * 24 * 60 * 60 * 1000 
             });
-            // trả access token về trong response
-            // Trả về cả accessToken ở root level để tương thích với frontend
-            return res.status(HTTP_STATUS.OK).json({
-                success: true,
-                message: 'Đăng nhập thành công',
+            
+            // ✅ Chuẩn hóa response format: chỉ trả accessToken trong data
+            return successResponse(res, {
                 accessToken: tokens.accessToken,
-                data: {
-                    accessToken: tokens.accessToken,
-                    user: {
-                        id: user._id,
-                        TenDangNhap: user.TenDangNhap,
-                        HoTen: user.HoTen,
-                        Email: user.Email,
-                        MaVaiTro: user.MaVaiTro
-                    }
+                user: {
+                    id: user._id,
+                    TenDangNhap: user.TenDangNhap,
+                    HoTen: user.HoTen,
+                    Email: user.Email,
+                    MaVaiTro: user.MaVaiTro
                 }
-            });
+            }, 'Đăng nhập thành công', HTTP_STATUS.OK);
         } catch (error) {
-            console.error('Lỗi khi đăng nhập: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi đăng nhập: ', error);
+            }
             return errorResponse(res, 'Lỗi khi đăng nhập', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
-    // tạo tài khoản mới
     async register(req, res) {
         try {
             const { hoten, username, email, password, sdt } = req.body;
-            // kiểm tra xem thông tin đã được nhập đầy đủ chưa
             if (!hoten || !username || !email || !password || !sdt) {
                 return errorResponse(res, 'Vui lòng nhập đầy đủ thông tin', HTTP_STATUS.BAD_REQUEST);
             }
-            // kiểm tra tài khoản tồn tại chưa, nếu tồn tại thì trả về lỗi
+            
+            // ✅ Validate email format
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                return errorResponse(res, 'Email không hợp lệ', HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            // ✅ Validate password strength (ít nhất 6 ký tự)
+            if (password.length < 6) {
+                return errorResponse(res, 'Mật khẩu phải có ít nhất 6 ký tự', HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            // ✅ Validate username (ít nhất 3 ký tự, không có ký tự đặc biệt)
+            if (username.length < 3 || !/^[a-zA-Z0-9_]+$/.test(username)) {
+                return errorResponse(res, 'Tên đăng nhập phải có ít nhất 3 ký tự và chỉ chứa chữ cái, số, dấu gạch dưới', HTTP_STATUS.BAD_REQUEST);
+            }
+            
             const user = await TaiKhoan.findOne({ 
                 $or: [{ Email: email.toLowerCase() }, { TenDangNhap: username }] 
             });
             if (user) {
                 return errorResponse(res, MESSAGES.USER_EXISTS, HTTP_STATUS.BAD_REQUEST);
             }
-            // Lấy role Customer mặc định
+            
             const customerRole = await Role.getCustomerRole();
             if (!customerRole) {
                 return errorResponse(res, 'Không tìm thấy vai trò Customer', HTTP_STATUS.INTERNAL_SERVER_ERROR);
             }
+            
             const hashedPassword = await hashPassword(password);
-            // Tạo tài khoản mới
             const newUser = new TaiKhoan({ 
                 HoTen: hoten, 
                 TenDangNhap: username, 
@@ -103,20 +110,17 @@ class AuthController {
                 MaVaiTro: customerRole._id,
                 SoDienThoai: sdt
             });
-            // tạo tài khoản mới
             await newUser.save();
             
-            // Gửi email chào mừng
             try {
                 await sendWelcomeEmail(newUser.Email, newUser.HoTen || newUser.TenDangNhap);
             } catch (emailError) {
-                console.error('Lỗi khi gửi email chào mừng:', emailError);
+                if (process.env.NODE_ENV === 'development') {
+                    console.error('Lỗi khi gửi email chào mừng:', emailError);
+                }
             }
             
-            // Tạo token pair cho user mới (tự động đăng nhập sau khi đăng ký)
             const tokens = generateTokenPair(newUser);
-            
-            // Tạo refresh token
             const refreshToken = crypto.randomBytes(32).toString('hex');
             const session = await Session.create({
                 userId: newUser._id,
@@ -125,49 +129,43 @@ class AuthController {
             });
             await session.save();
             
-            // Gửi refresh token về trong cookie
             res.cookie('refreshToken', refreshToken, {
                 httpOnly: true, 
                 secure: process.env.NODE_ENV === 'production', 
                 maxAge: 7 * 24 * 60 * 60 * 1000 
             });
             
-            // Trả về cả accessToken ở root level để tương thích với frontend
-            return res.status(HTTP_STATUS.CREATED).json({
-                success: true,
-                message: 'Tạo tài khoản thành công',
+            // ✅ Chuẩn hóa response format: chỉ trả accessToken trong data
+            return successResponse(res, {
                 accessToken: tokens.accessToken,
-                data: {
-                    accessToken: tokens.accessToken,
-                    user: {
-                        id: newUser._id,
-                        TenDangNhap: newUser.TenDangNhap,
-                        HoTen: newUser.HoTen,
-                        Email: newUser.Email
-                    }
+                user: {
+                    id: newUser._id,
+                    TenDangNhap: newUser.TenDangNhap,
+                    HoTen: newUser.HoTen,
+                    Email: newUser.Email
                 }
-            });
+            }, 'Tạo tài khoản thành công', HTTP_STATUS.CREATED);
         } catch (error) {
-            console.error('Lỗi khi tạo tài khoản: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi tạo tài khoản: ', error);
+            }
             return errorResponse(res, 'Lỗi khi tạo tài khoản', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
-    // đăng xuất
     async logout(req, res) {
         try {
             const { refreshToken } = req.cookies;
             
-            // Nếu có refreshToken, xóa session
             if (refreshToken) {
                 try {
                     await Session.findOneAndDelete({ refreshToken });
                 } catch (sessionError) {
-                    console.error('Lỗi khi xóa session:', sessionError);
-                    // Tiếp tục logout dù có lỗi xóa session
+                    if (process.env.NODE_ENV === 'development') {
+                        console.error('Lỗi khi xóa session:', sessionError);
+                    }
                 }
             }
             
-            // Clear refreshToken cookie
             res.clearCookie('refreshToken', {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
@@ -175,12 +173,11 @@ class AuthController {
                 path: '/'
             });
             
-            // Trả về success dù có refreshToken hay không
-            // Frontend sẽ tự clear storage
             return successResponse(res, null, 'Đăng xuất thành công', HTTP_STATUS.OK);
         } catch (error) {
-            console.error('Lỗi khi đăng xuất: ', error);
-            // Vẫn trả về success để frontend có thể clear storage
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi đăng xuất: ', error);
+            }
             res.clearCookie('refreshToken', {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
@@ -211,18 +208,15 @@ class AuthController {
             }
             
             const tokens = generateTokenPair(user);
-            // Trả về cả accessToken ở root level để tương thích với frontend
-            return res.status(HTTP_STATUS.OK).json({
-                success: true,
-                message: 'Token đã được làm mới',
-                accessToken: tokens.accessToken,
-                data: {
-                    accessToken: tokens.accessToken
-                }
-            });
+            // ✅ Chuẩn hóa response format: chỉ trả accessToken trong data
+            return successResponse(res, {
+                accessToken: tokens.accessToken
+            }, 'Token đã được làm mới', HTTP_STATUS.OK);
         }
         catch (error) {
-            console.error('Lỗi khi làm mới token: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi làm mới token: ', error);
+            }
             return errorResponse(res, 'Lỗi khi làm mới token', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
@@ -241,7 +235,9 @@ class AuthController {
             
             return successResponse(res, null, 'Email đã được gửi', HTTP_STATUS.OK);
         } catch (error) {
-            console.error('Lỗi khi gửi email: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi gửi email: ', error);
+            }
             return errorResponse(res, 'Lỗi khi gửi email', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
@@ -263,7 +259,9 @@ class AuthController {
             return successResponse(res, null, 'Nếu email tồn tại, chúng tôi sẽ gửi hướng dẫn.', HTTP_STATUS.OK);
         }
         catch (error) {
-            console.error('Lỗi khi quên mật khẩu: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi quên mật khẩu: ', error);
+            }
             return errorResponse(res, 'Lỗi khi quên mật khẩu', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
@@ -284,7 +282,9 @@ class AuthController {
     
         return successResponse(res, null, 'Nếu email tồn tại, chúng tôi sẽ gửi hướng dẫn.', HTTP_STATUS.OK);
       } catch (error) {
-        console.error('Lỗi khi gửi email đặt lại mật khẩu:', error);
+        if (process.env.NODE_ENV === 'development') {
+            console.error('Lỗi khi gửi email đặt lại mật khẩu:', error);
+        }
         return errorResponse(res, 'Không thể gửi email đặt lại mật khẩu', HTTP_STATUS.INTERNAL_SERVER_ERROR);
       }
     }
@@ -315,25 +315,23 @@ class AuthController {
             return successResponse(res, null, 'Đặt lại mật khẩu thành công', HTTP_STATUS.OK);
         }
         catch (error) {
-            console.error('Lỗi khi đặt lại mật khẩu: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi đặt lại mật khẩu: ', error);
+            }
             return errorResponse(res, 'Lỗi khi đặt lại mật khẩu', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
 
-    // OAuth Callback - xử lý sau khi đăng nhập thành công bằng Google
     async oauthCallback(req, res) {
         try {
-            const user = req.user; // User từ passport strategy
+            const user = req.user;
             
             if (!user) {
                 const frontendUrl = getFrontendUrl();
                 return res.redirect(`${frontendUrl}/login?error=oauth_failed`);
             }
 
-            // Tạo token pair
             const tokens = generateTokenPair(user);
-
-            // Tạo refresh token
             const refreshToken = crypto.randomBytes(32).toString('hex');
             const session = await Session.create({
                 userId: user._id,
@@ -342,26 +340,27 @@ class AuthController {
             });
             await session.save();
 
-            // Redirect về frontend với token trong hash fragment (an toàn hơn, không gửi lên server)
             const frontendUrl = getFrontendUrl();
-            // Sử dụng hash fragment thay vì query string để tránh lộ token trong server logs và referrer headers
             const redirectUrl = `${frontendUrl}/auth/callback#token=${encodeURIComponent(tokens.accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}`;
             
             return res.redirect(redirectUrl);
         } catch (error) {
-            console.error('Lỗi khi xử lý OAuth callback: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi xử lý OAuth callback: ', error);
+            }
             const frontendUrl = getFrontendUrl();
             return res.redirect(`${frontendUrl}/login?error=oauth_error`);
         }
     }
 
-    // OAuth Error handler
     async oauthError(req, res) {
         try {
             const frontendUrl = getFrontendUrl();
             return res.redirect(`${frontendUrl}/login?error=oauth_failed`);
         } catch (error) {
-            console.error('Lỗi khi xử lý OAuth error: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi xử lý OAuth error: ', error);
+            }
             const frontendUrl = getFrontendUrl();
             return res.redirect(`${frontendUrl}/login?error=oauth_error`);
         }

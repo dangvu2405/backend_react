@@ -3,6 +3,7 @@ const router = express.Router();
 const AuthController = require('../app/controllers/AuthController');
 const TaiKhoanController = require('../app/controllers/TaiKhoanController');
 const { passport } = require('../config/passport');
+const { authLimiter } = require('../app/middlewares/rateLimit.middleware');
 
 // Helper function để normalize frontend URL (xóa trailing slash)
 const getFrontendUrl = () => {
@@ -10,12 +11,13 @@ const getFrontendUrl = () => {
     return url.replace(/\/+$/, ''); // Xóa trailing slash
 };
 
-router.post('/login', AuthController.login);
-router.post('/register', AuthController.register);
+// ✅ Thêm rate limiting cho auth endpoints để chống brute force
+router.post('/login', authLimiter, AuthController.login);
+router.post('/register', authLimiter, AuthController.register);
 router.post('/logout', AuthController.logout);
 router.post('/refresh-token', AuthController.refreshToken);
-router.post('/forgot-password', AuthController.sendPasswordResetEmail);
-router.post('/reset-password', TaiKhoanController.changePassword);
+router.post('/forgot-password', authLimiter, AuthController.sendPasswordResetEmail);
+router.post('/reset-password', authLimiter, TaiKhoanController.changePassword);
 
 // OAuth Routes - Google
 router.get('/google', (req, res, next) => {

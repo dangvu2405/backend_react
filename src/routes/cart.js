@@ -3,9 +3,11 @@ const router = express.Router();
 const GioHangController = require('../app/controllers/GioHangController');
 const DonHangController = require('../app/controllers/DonHangController');
 const optionalAuthMiddleware = require('../app/middlewares/optionalAuth.middleware');
+const { checkoutLimiter } = require('../app/middlewares/rateLimit.middleware');
 
-router.post('/add-to-cart', GioHangController.addToCart);
-router.get('/get-cart', GioHangController.getCart);
-router.post('/update-cart', GioHangController.updateCart);
-router.post('/checkout', optionalAuthMiddleware, DonHangController.checkout);
+// ✅ Sử dụng optionalAuthMiddleware để hỗ trợ cả guest và user
+router.post('/add-to-cart', optionalAuthMiddleware, GioHangController.addToCart);
+router.get('/get-cart', optionalAuthMiddleware, GioHangController.getCart);
+router.post('/update-cart', optionalAuthMiddleware, GioHangController.updateCart);
+router.post('/checkout', optionalAuthMiddleware, checkoutLimiter, DonHangController.checkout);
 module.exports = router;

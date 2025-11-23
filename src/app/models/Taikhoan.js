@@ -18,8 +18,8 @@ const TaikhoanSchema = new mongoose.Schema({
     MatKhau: {
         type: String,
         required: function() {
-            // Mật khẩu không bắt buộc nếu đăng nhập bằng OAuth
-            return !this.facebook && !this.google;
+            // Mật khẩu không bắt buộc nếu đăng nhập bằng Google OAuth
+            return !this.google;
         },
         minlength: [6, 'Mật khẩu phải có ít nhất 6 ký tự']
     },
@@ -68,8 +68,8 @@ const TaikhoanSchema = new mongoose.Schema({
     SoDienThoai: {
         type: String,
         required: function() {
-            // Số điện thoại không bắt buộc nếu đăng nhập bằng OAuth
-            return !this.facebook && !this.google;
+            // Số điện thoại không bắt buộc nếu đăng nhập bằng Google OAuth
+            return !this.google;
         },
         trim: true,
         match: [/^[0-9]{10}$/, 'Số điện thoại phải có 10 chữ số']

@@ -32,7 +32,6 @@ class SupplyChainController {
                     productName: productDoc.TenSanPham,
                 });
             }
-
             return res.status(200).json({
                 message: 'Lấy truy vết chuỗi cung ứng thành công',
                 data: traceData,

@@ -1,5 +1,5 @@
-const jwt = require('jsonwebtoken');
 const TaiKhoan = require('../models/Taikhoan');
+const { verifyToken } = require('../../utils/token');
 
 /**
  * Optional Auth Middleware
@@ -7,32 +7,47 @@ const TaiKhoan = require('../models/Taikhoan');
  */
 const optionalAuthMiddleware = async (req, res, next) => {
     try {
-        const token = req.headers.authorization?.split(' ')[1];
+        // Lấy token từ header Authorization
+        const authHeader = req.headers.authorization || req.headers.Authorization;
+        let token = null;
+        
+        if (authHeader) {
+            // Hỗ trợ cả "Bearer token" và "token" trực tiếp
+            if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+                token = authHeader.split(' ')[1];
+            } else if (typeof authHeader === 'string') {
+                token = authHeader;
+            }
+        }
         
         if (!token) {
             // Không có token, tiếp tục mà không set req.user
             return next();
         }
-        try {
-            const jwtSecret = process.env.ACCESS_TOKEN_SECRET;
-            const decoded = jwt.verify(token, jwtSecret);
-            
-            // Tìm user theo ID
-            const user = await TaiKhoan.findById(decoded.id)
-                .select('-MatKhau -DiaChi')
-                .populate('MaVaiTro', 'TenVaiTro MoTa');
-            
-            if (user && user.TrangThai === 'active') {
-                req.user = user;
-            }
-        } catch (jwtError) {
+        
+        // Verify token sử dụng utils/token.js (nhất quán với auth.middleware)
+        const decoded = verifyToken(token);
+        
+        if (!decoded) {
             // Token không hợp lệ, nhưng vẫn tiếp tục (optional auth)
-            console.log('Optional auth: Invalid token, continuing without user');
+            return next();
+        }
+        
+        // Tìm user theo ID
+        const user = await TaiKhoan.findById(decoded.id)
+            .select('-MatKhau -DiaChi')
+            .populate('MaVaiTro', 'TenVaiTro MoTa');
+        
+        if (user && user.TrangThai === 'active') {
+            req.user = user;
+            if (!req.user.id) {
+                req.user.id = req.user._id?.toString() || decoded.id;
+            }
         }
         
         next();
     } catch (error) {
-        // Lỗi khác, vẫn tiếp tục
+        // Lỗi khác, vẫn tiếp tục (optional auth)
         next();
     }
 }

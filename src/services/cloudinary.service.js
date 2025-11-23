@@ -1,7 +1,3 @@
-/**
- * Cloudinary Service
- * Handles image uploads to Cloudinary CDN
- */
 
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');

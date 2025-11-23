@@ -1,36 +1,63 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const TaiKhoanController = require('../app/controllers/TaiKhoanController');
 const authMiddleware = require('../app/middlewares/auth.middleware');
 const upload = require('../app/middlewares/upload.middleware');
 const DonHangController = require('../app/controllers/DonHangController');
 const validate = require('../validations/validate.middleware');
 const { cancelOrderSchema } = require('../validations/order.validation');
-// GET /me	lấy thông tin người dùng sau khi login
-router.get('/me', TaiKhoanController.getMe);
-// POST /uploadAvatar	upload avatar file, xong save vô database
-router.post('/uploadAvatar', upload.single('avatar'), TaiKhoanController.uploadAvatar);
-// PATCH /m update user's profile
-router.put('/me', TaiKhoanController.updateUser);
-// // GET /order	tất cả đơn hàng của người dùng
-router.get('/orderUser', DonHangController.getDonHang);
-// // GET /order/:id	xem chi tiết đơn hàng của người dùng
-router.get('/orderUser/:id', DonHangController.getDetailDonHang);
-// // DELETE /order/:id	hủy đơn hàng 
-router.delete('/orderUser/:id', validate(cancelOrderSchema, 'body'), DonHangController.cancelDonHang);
-// // POST /changepassword	đổi mật khẩu tài khoản
-router.post('/changepassword', TaiKhoanController.changePassword);
-// GET /addess	lấy địa chỉ người dùng
-router.get('/addess', TaiKhoanController.getAddresses);
-// POST /addess	thêm địa chỉ 
-router.post('/addess', TaiKhoanController.createAddress);
-// PATCH /addess/:id	cập nhật địa chỉ người dùng
-router.patch('/addess/:id', TaiKhoanController.updateAddress);
-// DELETE /addess/:id	xóa địa chỉ của người dùng
-router.delete('/addess/:id', TaiKhoanController.deleteAddress);
-// DELETE /me/oauth	xóa dữ liệu OAuth (Google)
-router.delete('/me/oauth', TaiKhoanController.deleteOAuthData);
-// DELETE /me/account	xóa toàn bộ tài khoản và dữ liệu
-router.delete('/me/account', TaiKhoanController.deleteMyAccount);
+const { errorResponse } = require('../utils/response');
+const { HTTP_STATUS, MESSAGES } = require('../constants');
+
+// ✅ Middleware để validate ObjectId trong params
+const validateObjectId = (req, res, next) => {
+    const { id } = req.params;
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        return errorResponse(res, 'ID không hợp lệ', HTTP_STATUS.BAD_REQUEST);
+    }
+    next();
+};
+
+// ✅ Tất cả routes đều cần authMiddleware
+// GET /me - Lấy thông tin người dùng sau khi login
+router.get('/me', authMiddleware, TaiKhoanController.getMe);
+
+// POST /uploadAvatar - Upload avatar file, xong save vô database
+router.post('/uploadAvatar', authMiddleware, upload.single('avatar'), TaiKhoanController.uploadAvatar);
+
+// PUT /me - Update user's profile
+router.put('/me', authMiddleware, TaiKhoanController.updateUser);
+
+// GET /orderUser - Tất cả đơn hàng của người dùng
+router.get('/orderUser', authMiddleware, DonHangController.getDonHang);
+
+// GET /orderUser/:id - Xem chi tiết đơn hàng của người dùng
+router.get('/orderUser/:id', authMiddleware, validateObjectId, DonHangController.getDetailDonHang);
+
+// DELETE /orderUser/:id - Hủy đơn hàng
+router.delete('/orderUser/:id', authMiddleware, validateObjectId, validate(cancelOrderSchema, 'body'), DonHangController.cancelDonHang);
+
+// POST /changepassword - Đổi mật khẩu tài khoản
+router.post('/changepassword', authMiddleware, TaiKhoanController.changePassword);
+
+// ✅ Sửa typo: addess → address
+// GET /address - Lấy địa chỉ người dùng
+router.get('/address', authMiddleware, TaiKhoanController.getAddresses);
+
+// POST /address - Thêm địa chỉ
+router.post('/address', authMiddleware, TaiKhoanController.createAddress);
+
+// PATCH /address/:id - Cập nhật địa chỉ người dùng
+router.patch('/address/:id', authMiddleware, validateObjectId, TaiKhoanController.updateAddress);
+
+// DELETE /address/:id - Xóa địa chỉ của người dùng
+router.delete('/address/:id', authMiddleware, validateObjectId, TaiKhoanController.deleteAddress);
+
+// DELETE /me/oauth - Xóa dữ liệu OAuth (Google)
+router.delete('/me/oauth', authMiddleware, TaiKhoanController.deleteOAuthData);
+
+// DELETE /me/account - Xóa toàn bộ tài khoản và dữ liệu
+router.delete('/me/account', authMiddleware, TaiKhoanController.deleteMyAccount);
 
 module.exports = router;

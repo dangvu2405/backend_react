@@ -6,18 +6,65 @@ const mongoose = require('mongoose');
  * ============================================
  */
 const DonHangSchema = new mongoose.Schema({
-    MaKhachHang: {
+    MaDonHang: {
         type: String,
+        unique: true,
+        sparse: true, // Cho phép null/undefined
+        default: function() {
+            // ✅ Dùng ObjectId để đảm bảo unique
+            return new mongoose.Types.ObjectId().toString();
+        }
+    },
+    MaKhachHang: {
+        type: mongoose.Schema.Types.Mixed,
         required: [true, 'Mã khách hàng là bắt buộc'],
-        trim: true,
-        minlength: [5, 'Mã khách hàng phải có ít nhất 10 ký tự'],
-        maxlength: [50, 'Mã khách hàng không được quá 50 ký tự']
+        validate: {
+            validator: function(value) {
+                return mongoose.Types.ObjectId.isValid(value) || 
+                       (typeof value === 'string' && value.startsWith('guest-'));
+            },
+            message: 'Mã khách hàng không hợp lệ'
+        }
     },
     SanPham: {
-        type: Array,
+        type: [{
+            MaSanPham: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'SanPham',
+                required: true
+            },
+            TenSanPham: {
+                type: String,
+                required: true,
+                trim: true
+            },
+            SoLuong: {
+                type: Number,
+                required: true,
+                min: [1, 'Số lượng phải lớn hơn 0']
+            },
+            Gia: {
+                type: Number,
+                required: true,
+                min: [0, 'Giá không được âm']
+            },
+            TongTien: {
+                type: Number,
+                required: true,
+                min: [0, 'Tổng tiền không được âm']
+            },
+            HinhAnhChinh: {
+                type: String,
+                default: ''
+            }
+        }],
         required: [true, 'Sản phẩm là bắt buộc'],
-        minlength: [1, 'Sản phẩm phải có ít nhất 1 sản phẩm'],
-        maxlength: [1000, 'Sản phẩm không được quá 1000 sản phẩm']
+        validate: {
+            validator: function(products) {
+                return Array.isArray(products) && products.length > 0 && products.length <= 1000;
+            },
+            message: 'Sản phẩm phải có ít nhất 1 sản phẩm và không quá 1000 sản phẩm'
+        }
     },
     TongTien: {
         type: Number,
@@ -30,6 +77,18 @@ const DonHangSchema = new mongoose.Schema({
         trim: true,
         minlength: [10, 'Địa chỉ phải có ít nhất 10 ký tự'],
         maxlength: [500, 'Địa chỉ không được quá 500 ký tự']
+    },
+    ThongTinNhanHang: {
+        type: {
+            HoTen: String,
+            Email: String,
+            SoDienThoai: String,
+            DiaChiChiTiet: String,
+            PhuongXa: String,
+            QuanHuyen: String,
+            TinhThanh: String
+        },
+        default: null
     },
     PhiVanChuyen: {
         type: Number,
@@ -137,10 +196,10 @@ DonHangSchema.virtual('NgayCapNhat').get(function() {
 });
 
 /**
- * Tổng cộng (Total + PhiVanChuyen)
+ * Tổng cộng (TongTien + PhiVanChuyen)
  */
 DonHangSchema.virtual('TongCong').get(function() {
-    return this.Total + this.PhiVanChuyen;
+    return this.TongTien + this.PhiVanChuyen;
 });
 
 // ============================================
@@ -304,7 +363,7 @@ DonHangSchema.statics.getTotalRevenue = async function(filter = {}) {
         {
             $group: {
                 _id: null,
-                total: { $sum: '$Total' }
+                total: { $sum: '$TongTien' }
             }
         }
     ]);
@@ -331,7 +390,7 @@ DonHangSchema.statics.getRevenueByDate = function(startDate, endDate) {
                 _id: {
                     $dateToString: { format: '%Y-%m-%d', date: '$createdAt' }
                 },
-                totalRevenue: { $sum: '$Total' },
+                totalRevenue: { $sum: '$TongTien' },
                 orderCount: { $sum: 1 }
             }
         },
@@ -348,7 +407,7 @@ DonHangSchema.statics.getStatisticsByStatus = function() {
             $group: {
                 _id: '$TrangThai',
                 count: { $sum: 1 },
-                totalAmount: { $sum: '$Total' }
+                totalAmount: { $sum: '$TongTien' }
             }
         }
     ]);
@@ -363,7 +422,7 @@ DonHangSchema.statics.getStatisticsByPaymentMethod = function() {
             $group: {
                 _id: '$PhuongThucThanhToan',
                 count: { $sum: 1 },
-                totalAmount: { $sum: '$Total' }
+                totalAmount: { $sum: '$TongTien' }
             }
         }
     ]);

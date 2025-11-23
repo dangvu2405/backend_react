@@ -1,7 +1,9 @@
+const mongoose = require('mongoose');
 const DonHang = require('../models/DonHang');
 const TaiKhoan = require('../models/Taikhoan');
+const SanPham = require('../models/SanPham');
 const { successResponse, errorResponse, paginatedResponse } = require('../../utils/response');
-const { HTTP_STATUS, MESSAGES, ORDER_STATUS, PAYMENT_METHODS } = require('../../constants');
+const { HTTP_STATUS, MESSAGES, ORDER_STATUS, PAYMENT_METHODS, PAYMENT_STATUS } = require('../../constants');
 
 const buildAddressFromInput = (DiaChi, ThongTinNhanHang = {}) => {
     if (typeof DiaChi === 'string' && DiaChi.trim()) {
@@ -44,6 +46,43 @@ const generateGuestCode = () => {
     return `guest-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 };
 
+/**
+ * Helper function to safely populate customer info
+ * Only populates if MaKhachHang is a valid ObjectId
+ */
+const populateCustomer = async (maKhachHang) => {
+    if (!maKhachHang) {
+        return null;
+    }
+    
+    // Check if it's a valid ObjectId (not a guest string)
+    if (typeof maKhachHang === 'string' && !mongoose.Types.ObjectId.isValid(maKhachHang)) {
+        // It's a guest user, return null
+        return null;
+    }
+    
+    // If it's already an object (already populated), return it
+    if (typeof maKhachHang === 'object' && maKhachHang._id) {
+        return maKhachHang;
+    }
+    
+    // Try to populate from database
+    try {
+        const customerId = typeof maKhachHang === 'string' ? maKhachHang : maKhachHang.toString();
+        if (!mongoose.Types.ObjectId.isValid(customerId)) {
+            return null;
+        }
+        return await TaiKhoan.findById(customerId)
+            .select('HoTen Email SoDienThoai DiaChi')
+            .lean();
+        } catch (err) {
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Error populating customer:', err);
+            }
+            return null;
+        }
+};
+
 class DonHangController {
     async getDonHang(req, res) {
         try{
@@ -59,7 +98,9 @@ class DonHangController {
             return successResponse(res, { donHang: ordersList }, 'Đơn hàng đã được lấy', HTTP_STATUS.OK);
         }
         catch(error){
-            console.error('Lỗi khi lấy đơn hàng: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi lấy đơn hàng: ', error);
+            }
             return errorResponse(res, 'Lỗi khi lấy đơn hàng', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
@@ -73,7 +114,9 @@ class DonHangController {
             return successResponse(res, { donHang }, 'Đơn hàng đã được tạo', HTTP_STATUS.OK);
         }
         catch(error){
-            console.error('Lỗi khi tạo đơn hàng: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi tạo đơn hàng: ', error);
+            }
             return errorResponse(res, 'Lỗi khi tạo đơn hàng', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
@@ -87,7 +130,9 @@ class DonHangController {
             return successResponse(res, { donHang: donhang }, 'Đơn hàng đã được lấy chi tiết', HTTP_STATUS.OK);
         }
         catch(error){
-            console.error('Lỗi khi lấy chi tiết đơn hàng: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi lấy chi tiết đơn hàng: ', error);
+            }
             return errorResponse(res, 'Lỗi khi lấy chi tiết đơn hàng', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
@@ -124,16 +169,23 @@ class DonHangController {
                 { $set: updateFields },
                 { new: true, runValidators: true }
             )
-                .populate('MaKhachHang', 'HoTen Email SoDienThoai')
                 .lean();
 
             if (!updatedOrder) {
                 return errorResponse(res, MESSAGES.ORDER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
             }
 
+            // Safely populate customer
+            const customer = await populateCustomer(updatedOrder.MaKhachHang);
+            if (customer) {
+                updatedOrder.MaKhachHang = customer;
+            }
+
             return successResponse(res, updatedOrder, 'Đơn hàng đã được cập nhật thành công', HTTP_STATUS.OK);
         } catch (error) {
-            console.error('Lỗi khi cập nhật đơn hàng: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi cập nhật đơn hàng: ', error);
+            }
             return errorResponse(res, 'Lỗi khi cập nhật đơn hàng', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
@@ -164,20 +216,51 @@ class DonHangController {
                 DonHang.countDocuments(filter)
             ]);
 
-            // Populate customer info cho mỗi đơn hàng
+            // Populate customer info và sản phẩm cho mỗi đơn hàng
             const ordersWithCustomer = await Promise.all(
                 orders.map(async (order) => {
-                    let customer = null;
-                    // MaKhachHang có thể là string (userId) hoặc ObjectId
-                    if (order.MaKhachHang) {
-                        try {
-                            customer = await TaiKhoan.findById(order.MaKhachHang)
-                                .select('HoTen Email SoDienThoai')
-                                .lean();
-                        } catch (err) {
-                            console.error('Error populating customer:', err);
-                        }
-                    }
+                    // Safely populate customer (only if valid ObjectId)
+                    const customer = await populateCustomer(order.MaKhachHang);
+                    
+                    // Nếu là guest user, sử dụng ThongTinNhanHang
+                    const isGuest = !customer && (typeof order.MaKhachHang === 'string' && 
+                        (order.MaKhachHang.startsWith('guest-') || !mongoose.Types.ObjectId.isValid(order.MaKhachHang)));
+
+                    // Populate sản phẩm - đảm bảo có TenSanPham
+                    const populatedProducts = await Promise.all(
+                        (order.SanPham || []).map(async (item) => {
+                            // Nếu đã có TenSanPham, giữ nguyên
+                            if (item.TenSanPham) {
+                                return item;
+                            }
+                            
+                            // Nếu có MaSanPham và là ObjectId hợp lệ, populate từ database
+                            const productId = item.MaSanPham || item.IdSanPham || item._id;
+                            if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+                                try {
+                                    const product = await SanPham.findById(productId)
+                                        .select('TenSanPham Gia KhuyenMai HinhAnhChinh')
+                                        .lean();
+                                    if (product) {
+                                        return {
+                                            ...item,
+                                            TenSanPham: product.TenSanPham,
+                                            Gia: item.Gia || product.Gia,
+                                            HinhAnhChinh: item.HinhAnhChinh || product.HinhAnhChinh
+                                        };
+                                    }
+                                } catch (err) {
+                                    console.error(`Error populating product ${productId}:`, err);
+                                }
+                            }
+                            
+                            // Fallback: trả về item với TenSanPham mặc định
+                            return {
+                                ...item,
+                                TenSanPham: item.TenSanPham || 'Sản phẩm không xác định'
+                            };
+                        })
+                    );
 
                     // Tạo mã đơn hàng từ _id
                     const maDonHang = order._id.toString().slice(-8).toUpperCase();
@@ -190,14 +273,19 @@ class DonHangController {
                             HoTen: customer.HoTen,
                             Email: customer.Email,
                             SoDienThoai: customer.SoDienThoai
-                        } : null,
+                        } : (isGuest && order.ThongTinNhanHang ? {
+                            HoTen: order.ThongTinNhanHang.HoTen,
+                            Email: order.ThongTinNhanHang.Email,
+                            SoDienThoai: order.ThongTinNhanHang.SoDienThoai,
+                            isGuest: true
+                        } : null),
                         TongTien: order.TongTien || 0,
                         TrangThai: order.TrangThai,
                         PhuongThucThanhToan: order.PhuongThucThanhToan,
                         DiaChi: order.DiaChi,
                         PhiVanChuyen: order.PhiVanChuyen || 0,
                         GhiChu: order.GhiChu || '',
-                        SanPham: order.SanPham || [],
+                        SanPham: populatedProducts,
                         createdAt: order.createdAt,
                         updatedAt: order.updatedAt
                     };
@@ -206,7 +294,9 @@ class DonHangController {
 
             return paginatedResponse(res, ordersWithCustomer, page, limit, total);
         } catch (error) {
-            console.error('Lỗi khi lấy danh sách đơn hàng:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi lấy danh sách đơn hàng:', error);
+            }
             return errorResponse(res, 'Lỗi khi lấy danh sách đơn hàng', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
@@ -218,26 +308,64 @@ class DonHangController {
         try {
             const orderId = req.params.id;
             if (!orderId) {
-                return res.status(400).json({ message: 'Thiếu ID đơn hàng' });
+                return errorResponse(res, 'Thiếu ID đơn hàng', HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            // ✅ Validate ObjectId
+            if (!mongoose.Types.ObjectId.isValid(orderId)) {
+                return errorResponse(res, 'ID đơn hàng không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
 
             const order = await DonHang.findById(orderId).lean();
 
             if (!order) {
-                return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+                return errorResponse(res, MESSAGES.ORDER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
             }
 
-            // Populate customer
-            let customer = null;
-            if (order.MaKhachHang) {
-                try {
-                    customer = await TaiKhoan.findById(order.MaKhachHang)
-                        .select('HoTen Email SoDienThoai DiaChi')
-                        .lean();
-                } catch (err) {
-                    console.error('Error populating customer:', err);
-                }
-            }
+            // Safely populate customer (only if valid ObjectId)
+            const customer = await populateCustomer(order.MaKhachHang);
+            
+            // Nếu là guest user, sử dụng ThongTinNhanHang
+            const isGuest = !customer && (typeof order.MaKhachHang === 'string' && 
+                (order.MaKhachHang.startsWith('guest-') || !mongoose.Types.ObjectId.isValid(order.MaKhachHang)));
+
+            // Populate sản phẩm - đảm bảo có TenSanPham
+            const populatedProducts = await Promise.all(
+                (order.SanPham || []).map(async (item) => {
+                    // Nếu đã có TenSanPham, giữ nguyên
+                    if (item.TenSanPham) {
+                        return item;
+                    }
+                    
+                    // Nếu có MaSanPham và là ObjectId hợp lệ, populate từ database
+                    const productId = item.MaSanPham || item.IdSanPham || item._id;
+                    if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+                        try {
+                            const product = await SanPham.findById(productId)
+                                .select('TenSanPham Gia KhuyenMai HinhAnhChinh')
+                                .lean();
+                            if (product) {
+                                return {
+                                    ...item,
+                                    TenSanPham: product.TenSanPham,
+                                    Gia: item.Gia || product.Gia,
+                                    HinhAnhChinh: item.HinhAnhChinh || product.HinhAnhChinh
+                                };
+                            }
+                        } catch (err) {
+                            if (process.env.NODE_ENV === 'development') {
+                                console.error(`Error populating product ${productId}:`, err);
+                            }
+                        }
+                    }
+                    
+                    // Fallback: trả về item với TenSanPham mặc định
+                    return {
+                        ...item,
+                        TenSanPham: item.TenSanPham || 'Sản phẩm không xác định'
+                    };
+                })
+            );
 
             const maDonHang = order._id.toString().slice(-8).toUpperCase();
 
@@ -250,19 +378,27 @@ class DonHangController {
                     Email: customer.Email,
                     SoDienThoai: customer.SoDienThoai,
                     DiaChi: customer.DiaChi
-                } : null,
+                } : (isGuest && order.ThongTinNhanHang ? {
+                    HoTen: order.ThongTinNhanHang.HoTen,
+                    Email: order.ThongTinNhanHang.Email,
+                    SoDienThoai: order.ThongTinNhanHang.SoDienThoai,
+                    DiaChi: buildAddressFromInput(order.DiaChi, order.ThongTinNhanHang),
+                    isGuest: true
+                } : null),
                 TongTien: order.TongTien || 0,
                 TrangThai: order.TrangThai,
                 PhuongThucThanhToan: order.PhuongThucThanhToan,
                 DiaChi: order.DiaChi,
                 PhiVanChuyen: order.PhiVanChuyen || 0,
                 GhiChu: order.GhiChu || '',
-                SanPham: order.SanPham || [],
+                SanPham: populatedProducts,
                 createdAt: order.createdAt,
                 updatedAt: order.updatedAt
             }, 'Lấy chi tiết đơn hàng thành công', HTTP_STATUS.OK);
         } catch (error) {
-            console.error('Lỗi khi lấy chi tiết đơn hàng:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi lấy chi tiết đơn hàng:', error);
+            }
             return errorResponse(res, 'Lỗi khi lấy chi tiết đơn hàng', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
@@ -280,11 +416,16 @@ class DonHangController {
             }
 
             // Tìm đơn hàng
-            const donHang = await DonHang.findById(orderId)
-                .populate('MaKhachHang', 'HoTen Email SoDienThoai');
+            const donHang = await DonHang.findById(orderId);
             
             if (!donHang) {
                 return errorResponse(res, MESSAGES.ORDER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
+            }
+
+            // Safely populate customer for permission check
+            const customer = await populateCustomer(donHang.MaKhachHang);
+            if (customer) {
+                donHang.MaKhachHang = customer;
             }
 
             // Kiểm tra quyền: User chỉ có thể hủy đơn của mình, trừ khi là admin
@@ -296,7 +437,9 @@ class DonHangController {
                 // Kiểm tra user có phải chủ đơn hàng không
                 const orderCustomerId = typeof donHang.MaKhachHang === 'string' 
                     ? donHang.MaKhachHang 
-                    : donHang.MaKhachHang?._id?.toString() || donHang.MaKhachHang?.toString();
+                    : (typeof donHang.MaKhachHang === 'object' && donHang.MaKhachHang?._id 
+                        ? donHang.MaKhachHang._id.toString() 
+                        : donHang.MaKhachHang?.toString() || donHang.MaKhachHang);
                 
                 if (orderCustomerId !== userId?.toString()) {
                     return errorResponse(res, 'Bạn không có quyền hủy đơn hàng này', HTTP_STATUS.FORBIDDEN);
@@ -336,7 +479,9 @@ class DonHangController {
                         stockUpdates.push({ productId, productName: product.TenSanPham, quantity });
                     }
                 } catch (stockError) {
-                    console.error(`Lỗi khi cập nhật kho cho sản phẩm ${item.MaSanPham}:`, stockError);
+                    if (process.env.NODE_ENV === 'development') {
+                        console.error(`Lỗi khi cập nhật kho cho sản phẩm ${item.MaSanPham}:`, stockError);
+                    }
                     // Tiếp tục xử lý các sản phẩm khác
                 }
             }
@@ -374,16 +519,25 @@ class DonHangController {
                 try {
                     await sendOrderCancellationEmail(customerEmail, donHang, cancelReason);
                 } catch (emailError) {
-                    console.error('Lỗi khi gửi email thông báo hủy đơn hàng:', emailError);
+                    if (process.env.NODE_ENV === 'development') {
+                        console.error('Lỗi khi gửi email thông báo hủy đơn hàng:', emailError);
+                    }
                     // Không fail nếu email lỗi, vẫn hủy đơn thành công
                 }
             }
 
             // Populate lại để trả về đầy đủ thông tin
             const updatedOrder = await DonHang.findById(orderId)
-                .populate('MaKhachHang', 'HoTen Email SoDienThoai')
                 .populate('SanPham.MaSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh')
                 .lean();
+            
+            // Safely populate customer
+            if (updatedOrder) {
+                const customer = await populateCustomer(updatedOrder.MaKhachHang);
+                if (customer) {
+                    updatedOrder.MaKhachHang = customer;
+                }
+            }
 
             return successResponse(res, { 
                 donHang: updatedOrder,
@@ -391,97 +545,153 @@ class DonHangController {
                 refundStatus: originalPaymentStatus === PAYMENT_STATUS.PAID ? 'pending' : null
             }, 'Đơn hàng đã được hủy thành công', HTTP_STATUS.OK);
         } catch (error) {
-            console.error('Lỗi khi hủy đơn hàng: ', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi hủy đơn hàng: ', error);
+            }
             return errorResponse(res, 'Lỗi khi hủy đơn hàng: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
-    async checkout(req,res){
+    async checkout(req, res) {
         try {
-            console.log('=== CHECKOUT REQUEST ===');
-            console.log('Request body:', JSON.stringify(req.body, null, 2));
-            console.log('User ID:', req.user?.id);
-            
-            const userId = req.user?.id;
+            // ✅ Hỗ trợ cả user và guest
+            const userId = req.user?.id || req.body?.guestId || generateGuestCode();
             const { DiaChi, SanPham, TongTien, PhuongThucThanhToan, GhiChu, Voucher, ThongTinNhanHang } = req.body;
             
-            if(!SanPham || !TongTien || !PhuongThucThanhToan){
-                console.log('Validation failed - missing required fields');
-                return errorResponse(res, 'Thiếu thông tin để thanh toán', HTTP_STATUS.BAD_REQUEST);
+            // ✅ Validate input
+            if (!SanPham || !Array.isArray(SanPham) || SanPham.length === 0) {
+                return errorResponse(res, 'Giỏ hàng trống', HTTP_STATUS.BAD_REQUEST);
             }
-
-            // Tạo đơn hàng
-            // Xử lý DiaChi - có thể là ObjectId (string) hoặc object (địa chỉ mới)
+            
+            if (!PhuongThucThanhToan) {
+                return errorResponse(res, 'Vui lòng chọn phương thức thanh toán', HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            // ✅ Validate và kiểm tra tồn kho
+            const validatedProducts = [];
+            let calculatedTotal = 0;
+            
+            for (const item of SanPham) {
+                const productId = item.MaSanPham || item._id || item.id;
+                const quantity = parseInt(item.SoLuong || item.quantity || 1);
+                
+                if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
+                    return errorResponse(res, `Sản phẩm không hợp lệ: ${productId}`, HTTP_STATUS.BAD_REQUEST);
+                }
+                
+                if (!quantity || quantity <= 0) {
+                    return errorResponse(res, `Số lượng không hợp lệ cho sản phẩm ${productId}`, HTTP_STATUS.BAD_REQUEST);
+                }
+                
+                // ✅ Kiểm tra sản phẩm tồn tại và còn hàng
+                const product = await SanPham.findById(productId);
+                if (!product) {
+                    return errorResponse(res, `Sản phẩm không tồn tại: ${productId}`, HTTP_STATUS.NOT_FOUND);
+                }
+                
+                if (!product.hasStock(quantity)) {
+                    return errorResponse(
+                        res,
+                        `Sản phẩm "${product.TenSanPham}" chỉ còn ${product.SoLuong} sản phẩm. Bạn đã chọn ${quantity}.`,
+                        HTTP_STATUS.BAD_REQUEST
+                    );
+                }
+                
+                // ✅ Tính giá (có khuyến mãi)
+                const price = product.KhuyenMai > 0 
+                    ? product.Gia * (1 - product.KhuyenMai / 100) 
+                    : product.Gia;
+                const itemTotal = price * quantity;
+                calculatedTotal += itemTotal;
+                
+                validatedProducts.push({
+                    MaSanPham: productId,
+                    TenSanPham: product.TenSanPham,
+                    SoLuong: quantity,
+                    Gia: price,
+                    TongTien: itemTotal,
+                    HinhAnhChinh: product.HinhAnhChinh
+                });
+            }
+            
+            // ✅ Validate tổng tiền (cho phép sai số nhỏ do làm tròn)
+            if (Math.abs(calculatedTotal - parseFloat(TongTien || 0)) > 1000) {
+                return errorResponse(
+                    res,
+                    `Tổng tiền không khớp. Tính toán: ${calculatedTotal}, Nhận được: ${TongTien}`,
+                    HTTP_STATUS.BAD_REQUEST
+                );
+            }
+            
+            // ✅ Xử lý địa chỉ
             const normalizedInfo = normalizeGuestInfo(ThongTinNhanHang);
             const diaChiFinal = buildAddressFromInput(DiaChi, normalizedInfo);
-
+            
             if (!diaChiFinal) {
                 return errorResponse(res, 'Địa chỉ giao hàng không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
-
-            const donHang = await DonHang.create({
-                MaKhachHang: userId || 'guest',
-                SanPham: SanPham,
-                TongTien: TongTien,
-                DiaChi: diaChiFinal,
-                ThongTinNhanHang: normalizedInfo,
-                PhiVanChuyen: 0,
-                PhuongThucThanhToan: PhuongThucThanhToan,
-                TrangThaiThanhToan: PhuongThucThanhToan === PAYMENT_METHODS.COD ? 'pending' : 'pending',
-                TrangThai: ORDER_STATUS.PENDING,
-                GhiChu: GhiChu || '',
-                Voucher: Voucher || null
-            });
-
-            // Convert Mongoose document to plain object để đảm bảo _id được serialize đúng
-            const donHangObj = donHang.toObject ? donHang.toObject() : donHang;
             
-            // Đảm bảo _id tồn tại và là string
-            const orderIdStr = (donHang._id?.toString() || donHangObj._id?.toString() || donHangObj._id || donHang._id).toString();
-            if (donHangObj._id) {
-                donHangObj._id = orderIdStr;
-            }
-
-            console.log('Order created successfully:', {
-                orderId: orderIdStr,
-                orderIdType: typeof orderIdStr,
-                paymentMethod: PhuongThucThanhToan
-            });
-
-            // Đảm bảo orderId có trong response và là string
-            const orderId = orderIdStr;
-
-            // Nếu là COD, trả về đơn hàng luôn
-            if (PhuongThucThanhToan === PAYMENT_METHODS.COD) {
-                const response = { 
+            // ✅ Sử dụng Transaction để đảm bảo atomicity
+            const session = await mongoose.startSession();
+            session.startTransaction();
+            
+            try {
+                // Giảm số lượng tồn kho
+                for (const item of validatedProducts) {
+                    const product = await SanPham.findById(item.MaSanPham).session(session);
+                    await product.decreaseStock(item.SoLuong);
+                }
+                
+                // Tạo đơn hàng
+                const donHang = await DonHang.create([{
+                    MaKhachHang: userId,
+                    SanPham: validatedProducts,
+                    TongTien: calculatedTotal,
+                    DiaChi: diaChiFinal,
+                    ThongTinNhanHang: normalizedInfo,
+                    PhiVanChuyen: 0,
+                    PhuongThucThanhToan: PhuongThucThanhToan,
+                    TrangThaiThanhToan: PhuongThucThanhToan === PAYMENT_METHODS.COD ? 'pending' : 'pending',
+                    TrangThai: ORDER_STATUS.PENDING,
+                    GhiChu: GhiChu || '',
+                    Voucher: Voucher || null
+                }], { session });
+                
+                await session.commitTransaction();
+                session.endSession();
+                
+                const donHangObj = donHang[0].toObject();
+                const orderId = donHangObj._id.toString();
+                
+                const response = {
                     orderId: orderId,
                     donHang: donHangObj,
-                    requiresPayment: false
+                    requiresPayment: PhuongThucThanhToan !== PAYMENT_METHODS.COD,
+                    paymentMethod: PhuongThucThanhToan
                 };
-                console.log('Sending COD response:', JSON.stringify(response, null, 2));
-                return successResponse(res, response, 'Đơn hàng đã được tạo', HTTP_STATUS.OK);
+                
+                return successResponse(
+                    res,
+                    response,
+                    PhuongThucThanhToan === PAYMENT_METHODS.COD
+                        ? 'Đơn hàng đã được tạo'
+                        : 'Đơn hàng đã được tạo. Vui lòng thanh toán.',
+                    HTTP_STATUS.OK
+                );
+            } catch (transactionError) {
+                await session.abortTransaction();
+                session.endSession();
+                throw transactionError;
             }
-
-            // Nếu là VNPay, trả về đơn hàng và yêu cầu thanh toán
-            const response = { 
-                orderId: orderId,
-                donHang: donHangObj,
-                requiresPayment: true,
-                paymentMethod: PhuongThucThanhToan
-            };
-            console.log('Sending payment response:', JSON.stringify(response, null, 2));
-            return successResponse(res, response, 'Đơn hàng đã được tạo. Vui lòng thanh toán.', HTTP_STATUS.OK);
-        }
-        catch(error){
-            console.error('Lỗi khi thanh toán đơn hàng: ', error);
-            return errorResponse(res, 'Lỗi khi thanh toán đơn hàng', HTTP_STATUS.INTERNAL_SERVER_ERROR);
+        } catch (error) {
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi thanh toán đơn hàng: ', error);
+            }
+            return errorResponse(res, 'Lỗi khi thanh toán đơn hàng: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
-
+    
     async guestCheckout(req, res) {
         try {
-            console.log('=== GUEST CHECKOUT REQUEST ===');
-            console.log('Request body:', JSON.stringify(req.body, null, 2));
-
             const {
                 ThongTinNhanHang,
                 DiaChi,
@@ -508,12 +718,64 @@ class DonHangController {
                 return errorResponse(res, MESSAGES.CART_EMPTY, HTTP_STATUS.BAD_REQUEST);
             }
 
-            if (!TongTien || Number(TongTien) <= 0) {
-                return errorResponse(res, 'Tổng tiền không hợp lệ', HTTP_STATUS.BAD_REQUEST);
-            }
-
             if (!PhuongThucThanhToan) {
                 return errorResponse(res, 'Vui lòng chọn phương thức thanh toán', HTTP_STATUS.BAD_REQUEST);
+            }
+
+            // ✅ Validate và kiểm tra tồn kho (giống checkout)
+            const validatedProducts = [];
+            let calculatedTotal = 0;
+            
+            for (const item of SanPham) {
+                const productId = item.MaSanPham || item._id || item.id;
+                const quantity = parseInt(item.SoLuong || item.quantity || 1);
+                
+                if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
+                    return errorResponse(res, `Sản phẩm không hợp lệ: ${productId}`, HTTP_STATUS.BAD_REQUEST);
+                }
+                
+                if (!quantity || quantity <= 0) {
+                    return errorResponse(res, `Số lượng không hợp lệ cho sản phẩm ${productId}`, HTTP_STATUS.BAD_REQUEST);
+                }
+                
+                // ✅ Kiểm tra sản phẩm tồn tại và còn hàng
+                const product = await SanPham.findById(productId);
+                if (!product) {
+                    return errorResponse(res, `Sản phẩm không tồn tại: ${productId}`, HTTP_STATUS.NOT_FOUND);
+                }
+                
+                if (!product.hasStock(quantity)) {
+                    return errorResponse(
+                        res,
+                        `Sản phẩm "${product.TenSanPham}" chỉ còn ${product.SoLuong} sản phẩm. Bạn đã chọn ${quantity}.`,
+                        HTTP_STATUS.BAD_REQUEST
+                    );
+                }
+                
+                // ✅ Tính giá (có khuyến mãi)
+                const price = product.KhuyenMai > 0 
+                    ? product.Gia * (1 - product.KhuyenMai / 100) 
+                    : product.Gia;
+                const itemTotal = price * quantity;
+                calculatedTotal += itemTotal;
+                
+                validatedProducts.push({
+                    MaSanPham: productId,
+                    TenSanPham: product.TenSanPham,
+                    SoLuong: quantity,
+                    Gia: price,
+                    TongTien: itemTotal,
+                    HinhAnhChinh: product.HinhAnhChinh
+                });
+            }
+            
+            // ✅ Validate tổng tiền (cho phép sai số nhỏ do làm tròn)
+            if (Math.abs(calculatedTotal - parseFloat(TongTien || 0)) > 1000) {
+                return errorResponse(
+                    res,
+                    `Tổng tiền không khớp. Tính toán: ${calculatedTotal}, Nhận được: ${TongTien}`,
+                    HTTP_STATUS.BAD_REQUEST
+                );
             }
 
             const diaChiFinal = buildAddressFromInput(DiaChi, normalizedInfo);
@@ -523,41 +785,59 @@ class DonHangController {
 
             const guestId = req.user?.id || generateGuestCode();
 
-            const donHang = await DonHang.create({
-                MaKhachHang: guestId,
-                SanPham,
-                TongTien,
-                DiaChi: diaChiFinal,
-                ThongTinNhanHang: normalizedInfo,
-                PhiVanChuyen: 0,
-                PhuongThucThanhToan,
-                TrangThaiThanhToan: PhuongThucThanhToan === PAYMENT_METHODS.COD ? 'pending' : 'pending',
-                TrangThai: ORDER_STATUS.PENDING,
-                GhiChu: GhiChu || '',
-                Voucher: Voucher || null
-            });
+            // ✅ Sử dụng Transaction để đảm bảo atomicity (giống checkout)
+            const session = await mongoose.startSession();
+            session.startTransaction();
+            
+            try {
+                // Giảm số lượng tồn kho
+                for (const item of validatedProducts) {
+                    const product = await SanPham.findById(item.MaSanPham).session(session);
+                    await product.decreaseStock(item.SoLuong);
+                }
+                
+                // Tạo đơn hàng
+                const donHang = await DonHang.create([{
+                    MaKhachHang: guestId,
+                    SanPham: validatedProducts,
+                    TongTien: calculatedTotal,
+                    DiaChi: diaChiFinal,
+                    ThongTinNhanHang: normalizedInfo,
+                    PhiVanChuyen: 0,
+                    PhuongThucThanhToan: PhuongThucThanhToan,
+                    TrangThaiThanhToan: PhuongThucThanhToan === PAYMENT_METHODS.COD ? 'pending' : 'pending',
+                    TrangThai: ORDER_STATUS.PENDING,
+                    GhiChu: GhiChu || '',
+                    Voucher: Voucher || null
+                }], { session });
+                
+                await session.commitTransaction();
+                session.endSession();
+                
+                const donHangObj = donHang[0].toObject();
+                const orderIdStr = donHangObj._id.toString();
 
-            const donHangObj = donHang.toObject ? donHang.toObject() : donHang;
-            const orderIdStr = (donHang._id?.toString() || donHangObj._id?.toString() || donHangObj._id || donHang._id).toString();
-            if (donHangObj._id) {
-                donHangObj._id = orderIdStr;
+                const response = {
+                    orderId: orderIdStr,
+                    donHang: donHangObj,
+                    requiresPayment: PhuongThucThanhToan !== PAYMENT_METHODS.COD,
+                    paymentMethod: PhuongThucThanhToan
+                };
+
+                const message = PhuongThucThanhToan === PAYMENT_METHODS.COD
+                    ? 'Đơn hàng đã được tạo'
+                    : 'Đơn hàng đã được tạo. Vui lòng thanh toán.';
+
+                return successResponse(res, response, message, HTTP_STATUS.OK);
+            } catch (transactionError) {
+                await session.abortTransaction();
+                session.endSession();
+                throw transactionError;
             }
-
-            const response = {
-                orderId: orderIdStr,
-                donHang: donHangObj,
-                requiresPayment: PhuongThucThanhToan !== PAYMENT_METHODS.COD,
-                paymentMethod: PhuongThucThanhToan
-            };
-
-            const message = PhuongThucThanhToan === PAYMENT_METHODS.COD
-                ? 'Đơn hàng đã được tạo'
-                : 'Đơn hàng đã được tạo. Vui lòng thanh toán.';
-
-            console.log('Guest order created:', JSON.stringify(response, null, 2));
-            return successResponse(res, response, message, HTTP_STATUS.OK);
         } catch (error) {
-            console.error('Lỗi khi guest checkout:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi guest checkout:', error);
+            }
             return errorResponse(res, 'Lỗi khi thanh toán đơn hàng', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
