@@ -27,7 +27,8 @@ const authMiddleware = async (req, res, next) => {
             /^\/api\/reviews\/product\/[^\/]+(?:\/stats)?$/,
             /^\/api\/supply-chain\/products\/[^\/]+\/trace$/,
             /^\/cart\/(add-to-cart|get-cart|update-cart|checkout)$/,
-            /^\/payment\/vnpay\/(create-payment-url|create-qr|return|ipn)$/
+            /^\/payment\/vnpay\/(create-payment-url|create-qr|return|ipn)$/,
+            /^\/payment\/(vnpay-callback|momo-callback)$/
         ];
         
         if (publicPaths.includes(req.path)) {

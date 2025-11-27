@@ -5,7 +5,7 @@ const userRouter = require('./user.js');
 const cartRouter = require('./cart.js');
 const adminRouter = require('./admin.js');
 const reviewsRouter = require('./reviews.js');
-const paymentRouter = require('./payment.js');
+const paymentRouter = require('./payment.routes.js');
 const chatRouter = require('./chat.js');
 
 function router(app) {

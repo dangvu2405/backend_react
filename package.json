@@ -48,6 +48,7 @@
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
+    "vnpay": "^2.4.4",
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
