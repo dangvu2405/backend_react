@@ -5,6 +5,7 @@ const TaiKhoanController = require('../app/controllers/TaiKhoanController');
 const authMiddleware = require('../app/middlewares/auth.middleware');
 const upload = require('../app/middlewares/upload.middleware');
 const DonHangController = require('../app/controllers/DonHangController');
+const HeartController = require('../app/controllers/HeartController');
 const validate = require('../validations/validate.middleware');
 const { cancelOrderSchema } = require('../validations/order.validation');
 const { errorResponse } = require('../utils/response');
@@ -59,5 +60,24 @@ router.delete('/me/oauth', authMiddleware, TaiKhoanController.deleteOAuthData);
 
 // DELETE /me/account - Xóa toàn bộ tài khoản và dữ liệu
 router.delete('/me/account', authMiddleware, TaiKhoanController.deleteMyAccount);
+
+// Heart (Favorite) Routes
+// GET /hearts - Lấy danh sách sản phẩm yêu thích
+router.get('/hearts', authMiddleware, HeartController.getUserHearts);
+
+// GET /hearts/ids - Lấy danh sách product IDs đã yêu thích
+router.get('/hearts/ids', authMiddleware, HeartController.getUserHeartProductIds);
+
+// GET /hearts/check/:productId - Kiểm tra đã yêu thích sản phẩm chưa
+router.get('/hearts/check/:productId', authMiddleware, validateObjectId, HeartController.checkHeart);
+
+// POST /hearts - Thêm sản phẩm vào yêu thích
+router.post('/hearts', authMiddleware, HeartController.addHeart);
+
+// DELETE /hearts/:productId - Xóa sản phẩm khỏi yêu thích
+router.delete('/hearts/:productId', authMiddleware, validateObjectId, HeartController.removeHeart);
+
+// POST /hearts/sync - Đồng bộ hearts từ localStorage (khi logout)
+router.post('/hearts/sync', authMiddleware, HeartController.syncHearts);
 
 module.exports = router;

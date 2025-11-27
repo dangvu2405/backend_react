@@ -14,6 +14,7 @@ const authMiddleware = async (req, res, next) => {
             '/auth/reset-password',
             '/auth/google',
             '/auth/google/callback',
+            '/auth/google/exchange',
             '/auth/google/error',
             '/api/supply-chain/lookup',
             '/payment/vnpay/return'

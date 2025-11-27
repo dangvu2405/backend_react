@@ -17,7 +17,9 @@ class TaiKhoanController {
                 trangThai, 
                 maVaiTro, 
                 gioiTinh, 
-                ngaySinh 
+                ngaySinh,
+                avatarUrl,
+                avatarId
             } = req.body;
 
             if (!hoten || !tenDangNhap || !email || !matKhau || !maVaiTro) {
@@ -52,7 +54,9 @@ class TaiKhoanController {
                 MaVaiTro: maVaiTro,
                 GioiTinh: gioiTinh || null,
                 NgaySinh: ngaySinh ? new Date(ngaySinh) : null,
-                DiaChi: []
+                DiaChi: [],
+                AvatarUrl: avatarUrl || null,
+                AvatarId: avatarId || null
             };
 
             const user = await TaiKhoan.create(userData);
@@ -118,6 +122,9 @@ class TaiKhoanController {
             
             if (ngaySinh !== undefined) update.NgaySinh = ngaySinh ? new Date(ngaySinh) : null;
             if (birthday !== undefined) update.NgaySinh = birthday ? new Date(birthday) : null; // backward compatibility
+            
+            if (avatarUrl !== undefined) update.AvatarUrl = avatarUrl || null;
+            if (avatarId !== undefined) update.AvatarId = avatarId || null;
 
             // Handle password update if provided
             if (req.body.matKhau || req.body.password) {
@@ -399,6 +406,8 @@ class TaiKhoanController {
                 maVaiTro,
                 gioiTinh,
                 ngaySinh,
+                avatarUrl,
+                avatarId,
                 // Support old field names for backward compatibility
                 username,
                 fullName,
@@ -430,6 +439,9 @@ class TaiKhoanController {
             
             if (ngaySinh !== undefined) update.NgaySinh = ngaySinh ? new Date(ngaySinh) : null;
             if (birthday !== undefined) update.NgaySinh = birthday ? new Date(birthday) : null; // backward compatibility
+            
+            if (avatarUrl !== undefined) update.AvatarUrl = avatarUrl || null;
+            if (avatarId !== undefined) update.AvatarId = avatarId || null;
 
             // Handle password update if provided
             if (req.body.matKhau || req.body.password) {

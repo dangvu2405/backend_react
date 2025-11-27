@@ -57,4 +57,7 @@ router.get('/google/callback',
 // OAuth error routes
 router.get('/google/error', AuthController.oauthError);
 
+// OAuth exchange endpoint - đổi code lấy token
+router.post('/google/exchange', AuthController.oauthExchange);
+
 module.exports = router;

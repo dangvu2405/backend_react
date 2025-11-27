@@ -190,7 +190,8 @@ class DanhGiaController {
             }).populate('IdKhachHang', 'HoTen AvatarUrl Email');
 
             if (!review) {
-                // ✅ Trả về 404 thay vì error để frontend có thể handle (user chưa đánh giá)
+                // ✅ Trả về 404 với message rõ ràng - đây là trường hợp bình thường (user chưa đánh giá)
+                // Frontend nên handle 404 này như một trường hợp hợp lệ
                 return errorResponse(res, 'Bạn chưa đánh giá sản phẩm này', HTTP_STATUS.NOT_FOUND);
             }
 
@@ -198,6 +199,8 @@ class DanhGiaController {
         } catch (error) {
             if (process.env.NODE_ENV === 'development') {
                 console.error('Error in getMyReview:', error);
+                console.error('ProductId:', req.params.productId);
+                console.error('UserId:', this.getUserId(req));
             }
             return errorResponse(res, 'Lỗi khi lấy đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }

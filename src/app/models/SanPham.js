@@ -29,6 +29,43 @@ const SanPhamSchema = new mongoose.Schema({
         min: [0, 'Khuyến mãi không được âm'],
         max: [100, 'Khuyến mãi không được quá 100%']
     },
+    /**
+     * @deprecated: Dung tích đơn lẻ (giữ để tương thích ngược, sẽ được sync từ DungTichOptions)
+     */
+    DungTich: {
+        type: Number,
+        min: [0, 'Dung tích không được âm'],
+        default: null
+    },
+    DungTichOptions: [{
+        value: {
+            type: Number,
+            min: [0, 'Dung tích không được âm'],
+            required: [true, 'Dung tích là bắt buộc']
+        },
+        label: {
+            type: String,
+            trim: true,
+            maxlength: 50
+        },
+        priceDiff: {
+            type: Number,
+            default: 0
+        },
+        stockDiff: {
+            type: Number,
+            default: 0
+        },
+        sku: {
+            type: String,
+            trim: true,
+            maxlength: 100
+        },
+        isDefault: {
+            type: Boolean,
+            default: false
+        }
+    }],
     MoTa: {
         type: String,
         default: '',
@@ -109,6 +146,115 @@ SanPhamSchema.virtual('ConHang').get(function() {
     return this.SoLuong > 0;
 });
 
+/**
+ * Chuẩn hóa tên sản phẩm với dung tích (ví dụ: "Nước hoa A 100ml")
+ * @param {String} name
+ * @param {Number} volume
+ */
+function formatProductNameWithVolume(name = '', volume) {
+    if (!volume || Number(volume) <= 0) {
+        return name?.trim();
+    }
+
+    const cleanName = (name || '')
+        .replace(/\s+(\d+(\.\d+)?\s?ml)$/i, '')
+        .trim();
+
+    const normalizedVolume = Number(volume);
+    const volumeText = Number.isInteger(normalizedVolume)
+        ? normalizedVolume.toString()
+        : normalizedVolume.toFixed(2).replace(/\.?0+$/, '');
+
+    return `${cleanName} ${volumeText}ml`.trim();
+}
+
+SanPhamSchema.statics.formatNameWithVolume = formatProductNameWithVolume;
+
+function normalizeVolumeOptions(options = [], fallbackVolume = null) {
+    let normalized = Array.isArray(options) ? options.filter(Boolean) : [];
+
+    if (!normalized.length && fallbackVolume) {
+        normalized = [{
+            value: fallbackVolume,
+            label: `${fallbackVolume} ml`,
+            isDefault: true
+        }];
+    }
+
+    normalized = normalized.map(option => {
+        const value = Number(option.value);
+        if (!Number.isFinite(value) || value < 0) return null;
+
+        const label = option.label?.trim() || `${value} ml`;
+
+        return {
+            value,
+            label,
+            priceDiff: Number(option.priceDiff) || 0,
+            stockDiff: Number.isFinite(option.stockDiff) ? Number(option.stockDiff) : 0,
+            sku: option.sku?.trim() || undefined,
+            isDefault: Boolean(option.isDefault)
+        };
+    }).filter(Boolean);
+
+    if (!normalized.length && fallbackVolume) {
+        normalized = [{
+            value: fallbackVolume,
+            label: `${fallbackVolume} ml`,
+            isDefault: true
+        }];
+    }
+
+    if (!normalized.some(option => option.isDefault)) {
+        if (normalized.length) {
+            normalized[0].isDefault = true;
+        }
+    } else {
+        normalized = normalized.map((option, index) => ({
+            ...option,
+            isDefault: option.isDefault || index === 0
+        }));
+    }
+
+    return normalized;
+}
+
+function getDefaultVolumeValue(options = [], fallback = null) {
+    if (!Array.isArray(options) || !options.length) {
+        return fallback;
+    }
+
+    const defaultOption = options.find(option => option.isDefault) || options[0];
+    return defaultOption ? defaultOption.value : fallback;
+}
+
+SanPhamSchema.statics.normalizeVolumeOptions = normalizeVolumeOptions;
+SanPhamSchema.methods.getDefaultVolumeValue = function() {
+    return getDefaultVolumeValue(this.DungTichOptions, this.DungTich);
+};
+SanPhamSchema.virtual('DefaultDungTich').get(function() {
+    return this.getDefaultVolumeValue();
+});
+
+SanPhamSchema.pre('save', function(next) {
+    const fallbackVolume = this.DungTich || null;
+    const volumeOptions = normalizeVolumeOptions(this.DungTichOptions, fallbackVolume);
+    this.DungTichOptions = volumeOptions;
+
+    const defaultVolume = getDefaultVolumeValue(volumeOptions, fallbackVolume);
+    this.DungTich = defaultVolume || null;
+
+    const shouldUpdateName =
+        (this.isModified('DungTichOptions') || this.isModified('DungTich')) ||
+        this.isModified('TenSanPham') ||
+        this.isNew;
+
+    if (shouldUpdateName) {
+        this.TenSanPham = formatProductNameWithVolume(this.TenSanPham, defaultVolume);
+    }
+    next();
+});
+
 // ============================================
 // INSTANCE METHODS
 // ============================================
@@ -122,22 +268,26 @@ SanPhamSchema.methods.hasStock = function(quantity) {
 
 /**
  * Giảm số lượng tồn kho
+ * @param {Number} quantity - Số lượng cần giảm
+ * @param {Object} options - Options cho save (có thể chứa session cho transaction)
  */
-SanPhamSchema.methods.decreaseStock = async function(quantity) {
+SanPhamSchema.methods.decreaseStock = async function(quantity, options = {}) {
     if (!this.hasStock(quantity)) {
         throw new Error('Không đủ hàng trong kho');
     }
     this.SoLuong -= quantity;
     this.DaBan += quantity;
-    return this.save();
+    return this.save(options);
 };
 
 /**
  * Tăng số lượng tồn kho
+ * @param {Number} quantity - Số lượng cần tăng
+ * @param {Object} options - Options cho save (có thể chứa session cho transaction)
  */
-SanPhamSchema.methods.increaseStock = async function(quantity) {
+SanPhamSchema.methods.increaseStock = async function(quantity, options = {}) {
     this.SoLuong += quantity;
-    return this.save();
+    return this.save(options);
 };
 
 // ============================================

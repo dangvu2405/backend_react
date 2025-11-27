@@ -4,10 +4,23 @@ const LoaiSanPham = require('../models/LoaiSanPham');
 const { successResponse, errorResponse, paginatedResponse } = require('../../utils/response');
 const { HTTP_STATUS, MESSAGES, PAGINATION } = require('../../constants');
 
+const normalizeVolumeOptions = SanPham.normalizeVolumeOptions;
+
 class SanPhamController {
     async createProduct(req, res) {
         try {
-            const { TenSanPham, MaLoaiSanPham, Gia, SoLuong, KhuyenMai, MoTa, HinhAnhChinh, HinhAnhPhu } = req.body;
+            const { 
+                TenSanPham, 
+                MaLoaiSanPham, 
+                Gia, 
+                SoLuong, 
+                KhuyenMai, 
+                MoTa, 
+                HinhAnhChinh, 
+                HinhAnhPhu,
+                DungTich,
+                DungTichOptions
+            } = req.body;
             
             // ✅ Kiểm tra các trường bắt buộc
             if (!TenSanPham || !MaLoaiSanPham || Gia === undefined || SoLuong === undefined) {
@@ -32,10 +45,20 @@ class SanPhamController {
                 return errorResponse(res, 'Khuyến mãi phải là số từ 0-100', HTTP_STATUS.BAD_REQUEST);
             }
             
+            if (DungTich !== undefined && (typeof DungTich !== 'number' || DungTich < 0)) {
+                return errorResponse(res, 'Dung tích phải là số không âm (đơn vị ml)', HTTP_STATUS.BAD_REQUEST);
+            }
+            
             // ✅ Kiểm tra loại sản phẩm tồn tại
             const category = await LoaiSanPham.findById(MaLoaiSanPham);
             if (!category) {
                 return errorResponse(res, 'Loại sản phẩm không tồn tại', HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            const volumeOptions = normalizeVolumeOptions(DungTichOptions, DungTich);
+
+            if (!volumeOptions.length) {
+                return errorResponse(res, 'Vui lòng cung cấp ít nhất một dung tích hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
             
             // ✅ Tạo sản phẩm
@@ -47,7 +70,9 @@ class SanPhamController {
                 KhuyenMai: KhuyenMai || 0,
                 MoTa: MoTa || '',
                 HinhAnhChinh: HinhAnhChinh || '',
-                HinhAnhPhu: Array.isArray(HinhAnhPhu) ? HinhAnhPhu : []
+                HinhAnhPhu: Array.isArray(HinhAnhPhu) ? HinhAnhPhu : [],
+                DungTich: DungTich ?? null,
+                DungTichOptions: volumeOptions
             });
             
             return successResponse(res, product, 'Sản phẩm đã được tạo', HTTP_STATUS.CREATED);
@@ -182,43 +207,63 @@ class SanPhamController {
             }
             
             // ✅ Chỉ cho phép update các field được phép
-            const allowedFields = ['TenSanPham', 'MaLoaiSanPham', 'Gia', 'KhuyenMai', 'MoTa', 'SoLuong', 'HinhAnhChinh', 'HinhAnhPhu'];
-            const updateData = {};
+            const allowedFields = [
+                'TenSanPham', 
+                'MaLoaiSanPham', 
+                'Gia', 
+                'KhuyenMai', 
+                'MoTa', 
+                'SoLuong', 
+                'HinhAnhChinh', 
+                'HinhAnhPhu',
+                'DungTich',
+                'DungTichOptions'
+            ];
+            let hasUpdates = false;
             
             for (const field of allowedFields) {
                 if (req.body[field] !== undefined) {
+                    const value = req.body[field];
                     // ✅ Validate từng field
-                    if (field === 'Gia' && (typeof req.body[field] !== 'number' || req.body[field] < 0)) {
+                    if (field === 'Gia' && (typeof value !== 'number' || value < 0)) {
                         return errorResponse(res, 'Giá phải là số dương', HTTP_STATUS.BAD_REQUEST);
                     }
-                    if (field === 'SoLuong' && (typeof req.body[field] !== 'number' || req.body[field] < 0 || !Number.isInteger(req.body[field]))) {
+                    if (field === 'SoLuong' && (typeof value !== 'number' || value < 0 || !Number.isInteger(value))) {
                         return errorResponse(res, 'Số lượng phải là số nguyên dương', HTTP_STATUS.BAD_REQUEST);
                     }
-                    if (field === 'KhuyenMai' && (typeof req.body[field] !== 'number' || req.body[field] < 0 || req.body[field] > 100)) {
+                    if (field === 'KhuyenMai' && (typeof value !== 'number' || value < 0 || value > 100)) {
                         return errorResponse(res, 'Khuyến mãi phải là số từ 0-100', HTTP_STATUS.BAD_REQUEST);
                     }
-                    if (field === 'MaLoaiSanPham' && !mongoose.Types.ObjectId.isValid(req.body[field])) {
+                    if (field === 'MaLoaiSanPham' && !mongoose.Types.ObjectId.isValid(value)) {
                         return errorResponse(res, 'MaLoaiSanPham không hợp lệ', HTTP_STATUS.BAD_REQUEST);
                     }
-                    if (field === 'TenSanPham' && (!req.body[field] || req.body[field].trim().length < 2)) {
+                    if (field === 'TenSanPham' && (!value || value.trim().length < 2)) {
                         return errorResponse(res, 'Tên sản phẩm phải có ít nhất 2 ký tự', HTTP_STATUS.BAD_REQUEST);
                     }
+                    if (field === 'DungTich' && (typeof value !== 'number' || value < 0)) {
+                        return errorResponse(res, 'Dung tích phải là số không âm (đơn vị ml)', HTTP_STATUS.BAD_REQUEST);
+                    }
+                    if (field === 'DungTichOptions') {
+                        const normalizedOptions = normalizeVolumeOptions(value, req.body.DungTich ?? existingProduct.DungTich);
+                        if (!normalizedOptions.length) {
+                            return errorResponse(res, 'Vui lòng cung cấp ít nhất một dung tích hợp lệ', HTTP_STATUS.BAD_REQUEST);
+                        }
+                        existingProduct.DungTichOptions = normalizedOptions;
+                        hasUpdates = true;
+                        continue;
+                    }
                     
-                    updateData[field] = req.body[field];
+                    existingProduct[field] = field === 'TenSanPham' ? value.trim() : value;
+                    hasUpdates = true;
                 }
             }
             
-            if (Object.keys(updateData).length === 0) {
+            if (!hasUpdates) {
                 return errorResponse(res, 'Không có dữ liệu để cập nhật', HTTP_STATUS.BAD_REQUEST);
             }
             
-            // ✅ Update với runValidators để chạy validation của Mongoose
-            const product = await SanPham.findByIdAndUpdate(
-                id,
-                { $set: updateData },
-                { new: true, runValidators: true }
-            )
-            .populate('MaLoaiSanPham', 'TenLoaiSanPham');
+            const product = await existingProduct.save();
+            await product.populate('MaLoaiSanPham', 'TenLoaiSanPham');
             
             return successResponse(res, product, 'Sản phẩm đã được cập nhật', HTTP_STATUS.OK);
         } catch (error) {

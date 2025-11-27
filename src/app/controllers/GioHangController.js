@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const GioHang = require('../models/GioHang');
+const SanPham = require('../models/SanPham');
 const { successResponse, errorResponse } = require('../../utils/response');
 const { HTTP_STATUS, MESSAGES } = require('../../constants');
 
@@ -13,6 +14,85 @@ const resolveCartOwnerId = (req) => {
         || req.body?.userId
         || req.body?.guestId
         || null;
+};
+
+const normalizeVolumeInput = (input) => {
+    if (input === null || input === undefined) {
+        return null;
+    }
+
+    if (typeof input === 'number' || typeof input === 'string') {
+        return { value: input };
+    }
+
+    if (typeof input === 'object') {
+        return {
+            value: input.value ?? input.Value ?? input.dungTich ?? input.DungTich,
+            label: input.label ?? input.Label
+        };
+    }
+
+    return null;
+};
+
+const resolveProductVolumeSelection = (product, rawInput) => {
+    const normalizedOptions = SanPham.normalizeVolumeOptions(
+        Array.isArray(product.DungTichOptions) ? product.DungTichOptions : [],
+        product.DungTich
+    );
+
+    if (!normalizedOptions.length) {
+        return { option: null, options: [], explicitRequest: Boolean(rawInput) };
+    }
+
+    const normalizedInput = normalizeVolumeInput(rawInput);
+    if (!normalizedInput || (normalizedInput.value === undefined && !normalizedInput.label)) {
+        const defaultOption = normalizedOptions.find(opt => opt.isDefault) || normalizedOptions[0];
+        return { option: defaultOption, options: normalizedOptions, explicitRequest: false };
+    }
+
+    const candidateValue = normalizedInput.value;
+    let selected = null;
+
+    if (candidateValue !== undefined && candidateValue !== null && candidateValue !== '') {
+        selected = normalizedOptions.find(opt => Number(opt.value) === Number(candidateValue));
+    }
+
+    if (!selected && normalizedInput.label) {
+        const labelText = String(normalizedInput.label).toLowerCase();
+        selected = normalizedOptions.find(opt => opt.label?.toLowerCase() === labelText);
+    }
+
+    return {
+        option: selected || null,
+        options: normalizedOptions,
+        explicitRequest: true
+    };
+};
+
+const formatSelectedVolumePayload = (option) => {
+    if (!option) {
+        return undefined;
+    }
+
+    return {
+        value: option.value,
+        label: option.label,
+        priceDiff: Number(option.priceDiff) || 0,
+        sku: option.sku || ''
+    };
+};
+
+const computeVariantPrice = (product, selectedOption) => {
+    const basePrice = Number(product.Gia) + Number(selectedOption?.priceDiff || 0);
+    const discount = Number(product.KhuyenMai) || 0;
+    const finalPrice = discount > 0 ? Math.round(basePrice * (1 - discount / 100)) : basePrice;
+
+    return {
+        basePrice,
+        discount,
+        finalPrice
+    };
 };
 
 class GioHangController {
@@ -36,7 +116,6 @@ class GioHangController {
             }
 
             // ✅ Kiểm tra sản phẩm tồn tại
-            const SanPham = require('../models/SanPham');
             const product = await SanPham.findById(productId);
             if (!product) {
                 return errorResponse(res, 'Sản phẩm không tồn tại', HTTP_STATUS.NOT_FOUND);
@@ -51,6 +130,17 @@ class GioHangController {
                 );
             }
 
+            const selectionInput = req.body.selectedDungTich || req.body.selectedVolume || req.body.volume;
+            const { option: resolvedVolume, options: volumeOptions, explicitRequest } = resolveProductVolumeSelection(product, selectionInput);
+
+            if (volumeOptions.length && explicitRequest && !resolvedVolume) {
+                return errorResponse(res, 'Dung tích đã chọn không hợp lệ', HTTP_STATUS.BAD_REQUEST);
+            }
+
+            const { finalPrice } = computeVariantPrice(product, resolvedVolume);
+            const selectedVolumePayload = formatSelectedVolumePayload(resolvedVolume);
+            const selectedVolumeValue = resolvedVolume ? Number(resolvedVolume.value) : null;
+
             // ✅ Tìm hoặc tạo giỏ hàng
             let cart = await GioHang.findOne({ IdKhachHang: ownerId });
             
@@ -62,9 +152,14 @@ class GioHangController {
             }
 
             // ✅ Tìm item trong giỏ hàng
-            const existingItemIndex = cart.Items.findIndex(
-                item => item.IdSanPham?.toString() === productId
-            );
+            const existingItemIndex = cart.Items.findIndex(item => {
+                const sameProduct = item.IdSanPham?.toString() === productId;
+                if (!sameProduct) return false;
+                const itemVolumeValue = item.SelectedDungTich?.value !== undefined && item.SelectedDungTich?.value !== null
+                    ? Number(item.SelectedDungTich.value)
+                    : null;
+                return itemVolumeValue === (selectedVolumeValue ?? null);
+            });
 
             if (existingItemIndex >= 0) {
                 // ✅ Cập nhật số lượng nếu đã có
@@ -80,22 +175,20 @@ class GioHangController {
                 }
 
                 cart.Items[existingItemIndex].SoLuong = newQuantity;
-                const price = product.KhuyenMai > 0 
-                    ? product.Gia * (1 - product.KhuyenMai / 100) 
-                    : product.Gia;
-                cart.Items[existingItemIndex].ThanhTien = price * newQuantity;
+                if (selectedVolumePayload) {
+                    cart.Items[existingItemIndex].SelectedDungTich = selectedVolumePayload;
+                }
+                cart.Items[existingItemIndex].Gia = finalPrice;
+                cart.Items[existingItemIndex].ThanhTien = finalPrice * newQuantity;
             } else {
                 // ✅ Thêm item mới
-                const price = product.KhuyenMai > 0 
-                    ? product.Gia * (1 - product.KhuyenMai / 100) 
-                    : product.Gia;
-
                 cart.Items.push({
                     IdSanPham: productId,
                     TenSanPham: product.TenSanPham,
-                    Gia: price,
+                    Gia: finalPrice,
                     SoLuong: qty,
-                    ThanhTien: price * qty
+                    ThanhTien: finalPrice * qty,
+                    SelectedDungTich: selectedVolumePayload
                 });
             }
 
@@ -103,7 +196,7 @@ class GioHangController {
 
             // ✅ Populate và trả về
             const updatedCart = await GioHang.findById(cart._id)
-                .populate('Items.IdSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh MaLoaiSanPham')
+                .populate('Items.IdSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh MaLoaiSanPham DungTichOptions DungTich')
                 .lean();
 
             return successResponse(res, { cart: updatedCart }, 'Đã thêm vào giỏ hàng', HTTP_STATUS.OK);
@@ -124,7 +217,7 @@ class GioHangController {
             }
             // Sử dụng model GioHang với IdKhachHang
             const cart = await GioHang.findOne({ IdKhachHang: userId })
-                .populate('Items.IdSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh MaLoaiSanPham')
+                .populate('Items.IdSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh MaLoaiSanPham DungTichOptions DungTich')
                 .lean();
             
             if (!cart) {
@@ -169,23 +262,41 @@ class GioHangController {
 
             // Map items từ localStorage format sang database format
             // Cần lấy thông tin sản phẩm từ database để có TenSanPham, Gia
-            const SanPham = require('../models/SanPham');
             const mappedItems = [];
             
             for (const item of items) {
                 try {
-                    const product = await SanPham.findById(item.id).select('TenSanPham Gia KhuyenMai');
+                    const productId = item.productId || item.IdSanPham || item.id;
+                    if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
+                        return errorResponse(res, 'Sản phẩm trong giỏ hàng không hợp lệ', HTTP_STATUS.BAD_REQUEST);
+                    }
+
+                    const product = await SanPham.findById(productId).select('TenSanPham Gia KhuyenMai DungTichOptions DungTich');
                     if (product) {
                         const gia = product.Gia || 0;
                         const giamGia = product.KhuyenMai || 0;
-                        const finalGia = giamGia > 0 ? Math.round(gia * (1 - giamGia / 100)) : gia;
+                        const selectionInput = item.selectedDungTich || item.selectedVolume || item.volume;
+                        const { option: resolvedVolume, options: volumeOptions, explicitRequest } = resolveProductVolumeSelection(product, selectionInput);
+
+                        if (volumeOptions.length && explicitRequest && !resolvedVolume) {
+                            return errorResponse(res, `Dung tích đã chọn cho sản phẩm ${product.TenSanPham} không hợp lệ`, HTTP_STATUS.BAD_REQUEST);
+                        }
+
+                        const finalGiaData = computeVariantPrice(
+                            { Gia: gia, KhuyenMai: giamGia },
+                            resolvedVolume
+                        );
+                        const finalGia = finalGiaData.finalPrice;
                         
+                        const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
+
                         mappedItems.push({
-                            IdSanPham: item.id,
+                            IdSanPham: product._id,
                             TenSanPham: product.TenSanPham || item.tenSP || 'Sản phẩm',
                             Gia: finalGia,
-                            SoLuong: item.quantity || 1,
-                            ThanhTien: finalGia * (item.quantity || 1)
+                            SoLuong: quantity,
+                            ThanhTien: finalGia * quantity,
+                            SelectedDungTich: formatSelectedVolumePayload(resolvedVolume)
                         });
                     }
                 } catch (err) {
@@ -202,7 +313,7 @@ class GioHangController {
 
             // Populate để trả về đầy đủ thông tin
             const updatedCart = await GioHang.findById(cart._id)
-                .populate('Items.IdSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh MaLoaiSanPham')
+                .populate('Items.IdSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh MaLoaiSanPham DungTichOptions DungTich')
                 .lean();
 
             return successResponse(res, { cart: updatedCart }, 'Đã cập nhật giỏ hàng thành công', HTTP_STATUS.OK);

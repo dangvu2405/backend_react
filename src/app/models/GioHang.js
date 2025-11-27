@@ -45,6 +45,28 @@ const GioHangSchema = new mongoose.Schema({
             type: Number,
             required: true,
             min: 0
+        },
+        SelectedDungTich: {
+            value: {
+                type: Number,
+                default: null
+            },
+            label: {
+                type: String,
+                trim: true,
+                maxlength: 50,
+                default: ''
+            },
+            priceDiff: {
+                type: Number,
+                default: 0
+            },
+            sku: {
+                type: String,
+                trim: true,
+                maxlength: 100,
+                default: ''
+            }
         }
     }]
 }, {

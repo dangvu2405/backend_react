@@ -56,6 +56,28 @@ const DonHangSchema = new mongoose.Schema({
             HinhAnhChinh: {
                 type: String,
                 default: ''
+        },
+        SelectedDungTich: {
+            value: {
+                type: Number,
+                default: null
+            },
+            label: {
+                type: String,
+                trim: true,
+                maxlength: 50,
+                default: ''
+            },
+            priceDiff: {
+                type: Number,
+                default: 0
+            },
+            sku: {
+                type: String,
+                trim: true,
+                maxlength: 100,
+                default: ''
+            }
             }
         }],
         required: [true, 'Sản phẩm là bắt buộc'],

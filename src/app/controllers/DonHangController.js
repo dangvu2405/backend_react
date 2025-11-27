@@ -5,6 +5,105 @@ const SanPham = require('../models/SanPham');
 const { successResponse, errorResponse, paginatedResponse } = require('../../utils/response');
 const { HTTP_STATUS, MESSAGES, ORDER_STATUS, PAYMENT_METHODS, PAYMENT_STATUS } = require('../../constants');
 
+// ✅ Validate SanPham model được load đúng
+if (!SanPham || typeof SanPham.findById !== 'function') {
+    console.error('ERROR: SanPham model is not loaded correctly!');
+    console.error('SanPham type:', typeof SanPham);
+    console.error('SanPham value:', SanPham);
+}
+
+// ✅ Helper function để đảm bảo SanPham model hợp lệ
+const getSanPhamModel = () => {
+    if (!SanPham || typeof SanPham.findById !== 'function') {
+        // Fallback: require lại model nếu cần
+        const SanPhamModel = require('../models/SanPham');
+        if (SanPhamModel && typeof SanPhamModel.findById === 'function') {
+            return SanPhamModel;
+        }
+        throw new Error('SanPham model is not available');
+    }
+    return SanPham;
+};
+
+const normalizeOrderVolumeInput = (input) => {
+    if (input === null || input === undefined) {
+        return null;
+    }
+
+    if (typeof input === 'number' || typeof input === 'string') {
+        return { value: input };
+    }
+
+    if (typeof input === 'object') {
+        return {
+            value: input.value ?? input.Value ?? input.dungTich ?? input.DungTich,
+            label: input.label ?? input.Label
+        };
+    }
+
+    return null;
+};
+
+const resolveOrderProductVolume = (product, rawInput) => {
+    const normalizedOptions = SanPham.normalizeVolumeOptions(
+        Array.isArray(product.DungTichOptions) ? product.DungTichOptions : [],
+        product.DungTich
+    );
+
+    if (!normalizedOptions.length) {
+        return { option: null, options: [], explicitRequest: Boolean(rawInput) };
+    }
+
+    const normalizedInput = normalizeOrderVolumeInput(rawInput);
+    if (!normalizedInput || (normalizedInput.value === undefined && !normalizedInput.label)) {
+        const defaultOption = normalizedOptions.find(opt => opt.isDefault) || normalizedOptions[0];
+        return { option: defaultOption, options: normalizedOptions, explicitRequest: false };
+    }
+
+    const candidateValue = normalizedInput.value;
+    let selected = null;
+
+    if (candidateValue !== undefined && candidateValue !== null && candidateValue !== '') {
+        selected = normalizedOptions.find(opt => Number(opt.value) === Number(candidateValue));
+    }
+
+    if (!selected && normalizedInput.label) {
+        const labelText = String(normalizedInput.label).toLowerCase();
+        selected = normalizedOptions.find(opt => opt.label?.toLowerCase() === labelText);
+    }
+
+    return {
+        option: selected || null,
+        options: normalizedOptions,
+        explicitRequest: true
+    };
+};
+
+const formatSelectedVolumeForOrder = (option) => {
+    if (!option) {
+        return undefined;
+    }
+
+    return {
+        value: option.value,
+        label: option.label,
+        priceDiff: Number(option.priceDiff) || 0,
+        sku: option.sku || ''
+    };
+};
+
+const computeVariantPriceForOrder = (product, selectedOption) => {
+    const basePrice = Number(product.Gia) + Number(selectedOption?.priceDiff || 0);
+    const discount = Number(product.KhuyenMai) || 0;
+    const finalPrice = discount > 0 ? Math.round(basePrice * (1 - discount / 100)) : basePrice;
+
+    return {
+        basePrice,
+        discount,
+        finalPrice
+    };
+};
+
 const buildAddressFromInput = (DiaChi, ThongTinNhanHang = {}) => {
     if (typeof DiaChi === 'string' && DiaChi.trim()) {
         return DiaChi.trim();
@@ -463,7 +562,7 @@ class DonHangController {
             const products = donHang.SanPham || [];
 
             // Cập nhật lại số lượng sản phẩm trong kho
-            const SanPham = require('../models/SanPham');
+            // SanPham đã được import ở đầu file, không cần require lại
             const stockUpdates = [];
             
             for (const item of products) {
@@ -554,7 +653,19 @@ class DonHangController {
     async checkout(req, res) {
         try {
             // ✅ Hỗ trợ cả user và guest
-            const userId = req.user?.id || req.body?.guestId || generateGuestCode();
+            let userId = req.user?.id || req.user?._id || req.body?.guestId;
+            
+            // Convert userId sang string nếu là ObjectId
+            if (userId) {
+                if (typeof userId === 'object' && userId.toString) {
+                    userId = userId.toString();
+                } else if (typeof userId !== 'string') {
+                    userId = String(userId);
+                }
+            } else {
+                userId = generateGuestCode();
+            }
+            
             const { DiaChi, SanPham, TongTien, PhuongThucThanhToan, GhiChu, Voucher, ThongTinNhanHang } = req.body;
             
             // ✅ Validate input
@@ -583,7 +694,8 @@ class DonHangController {
                 }
                 
                 // ✅ Kiểm tra sản phẩm tồn tại và còn hàng
-                const product = await SanPham.findById(productId);
+                const SanPhamModel = getSanPhamModel();
+                const product = await SanPhamModel.findById(productId);
                 if (!product) {
                     return errorResponse(res, `Sản phẩm không tồn tại: ${productId}`, HTTP_STATUS.NOT_FOUND);
                 }
@@ -596,38 +708,116 @@ class DonHangController {
                     );
                 }
                 
-                // ✅ Tính giá (có khuyến mãi)
-                const price = product.KhuyenMai > 0 
-                    ? product.Gia * (1 - product.KhuyenMai / 100) 
-                    : product.Gia;
-                const itemTotal = price * quantity;
+                const selectionInput = item.selectedDungTich || item.SelectedDungTich || item.volume;
+                const { option: resolvedVolume, options: volumeOptions, explicitRequest } = resolveOrderProductVolume(product, selectionInput);
+
+                if (volumeOptions.length && explicitRequest && !resolvedVolume) {
+                    return errorResponse(
+                        res,
+                        `Dung tích đã chọn cho sản phẩm "${product.TenSanPham}" không hợp lệ`,
+                        HTTP_STATUS.BAD_REQUEST
+                    );
+                }
+
+                const { finalPrice } = computeVariantPriceForOrder(product, resolvedVolume);
+                const itemTotal = finalPrice * quantity;
                 calculatedTotal += itemTotal;
                 
                 validatedProducts.push({
                     MaSanPham: productId,
                     TenSanPham: product.TenSanPham,
                     SoLuong: quantity,
-                    Gia: price,
+                    Gia: finalPrice,
                     TongTien: itemTotal,
-                    HinhAnhChinh: product.HinhAnhChinh
+                    HinhAnhChinh: product.HinhAnhChinh,
+                    SelectedDungTich: formatSelectedVolumeForOrder(resolvedVolume)
                 });
             }
             
-            // ✅ Validate tổng tiền (cho phép sai số nhỏ do làm tròn)
-            if (Math.abs(calculatedTotal - parseFloat(TongTien || 0)) > 1000) {
+            // ✅ Validate tổng tiền
+            // Frontend có thể đã tính voucher discount, nên nếu frontend total < calculatedTotal
+            // và chênh lệch hợp lý (< 20%), thì chấp nhận tổng tiền từ frontend
+            const frontendTotal = parseFloat(TongTien || 0);
+            const difference = Math.abs(calculatedTotal - frontendTotal);
+            const maxDiscountPercent = 0.2; // Cho phép giảm tối đa 20%
+            const maxDiscountAmount = calculatedTotal * maxDiscountPercent;
+            
+            let finalTotal = calculatedTotal;
+            
+            // Nếu frontend total nhỏ hơn (có thể do voucher hoặc làm tròn)
+            if (frontendTotal < calculatedTotal) {
+                // Kiểm tra xem chênh lệch có hợp lý không (do voucher hoặc làm tròn)
+                if (difference <= maxDiscountAmount) {
+                    // Chấp nhận tổng tiền từ frontend (đã tính voucher hoặc làm tròn)
+                    finalTotal = frontendTotal;
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log('Using frontend total (with discount/rounding):', finalTotal);
+                        console.log('Difference:', difference, 'Max allowed:', maxDiscountAmount);
+                    }
+                } else {
+                    // Chênh lệch quá lớn, có thể có lỗi
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log('=== TONG TIEN VALIDATION ERROR ===');
+                        console.log('Calculated total (backend):', calculatedTotal);
+                        console.log('Received total (frontend):', frontendTotal);
+                        console.log('Difference:', difference);
+                        console.log('Max allowed discount:', maxDiscountAmount);
+                        console.log('Has voucher:', !!Voucher, Voucher);
+                        console.log('===================================');
+                    }
+                    
                 return errorResponse(
                     res,
-                    `Tổng tiền không khớp. Tính toán: ${calculatedTotal}, Nhận được: ${TongTien}`,
+                        `Tổng tiền không khớp. Tính toán: ${calculatedTotal.toLocaleString('vi-VN')}, Nhận được: ${frontendTotal.toLocaleString('vi-VN')}`,
                     HTTP_STATUS.BAD_REQUEST
                 );
             }
+            } else if (frontendTotal > calculatedTotal) {
+                // Frontend total lớn hơn - có thể có lỗi hoặc phí vận chuyển
+                // Cho phép sai số nhỏ do làm tròn (1000đ)
+                if (difference > 1000) {
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log('=== TONG TIEN VALIDATION ERROR ===');
+                        console.log('Frontend total is higher than calculated');
+                        console.log('Calculated total (backend):', calculatedTotal);
+                        console.log('Received total (frontend):', frontendTotal);
+                        console.log('Difference:', difference);
+                        console.log('===================================');
+                    }
+                    
+                    return errorResponse(
+                        res,
+                        `Tổng tiền không khớp. Tính toán: ${calculatedTotal.toLocaleString('vi-VN')}, Nhận được: ${frontendTotal.toLocaleString('vi-VN')}`,
+                        HTTP_STATUS.BAD_REQUEST
+                    );
+                }
+            }
+            // Nếu frontendTotal === calculatedTotal hoặc chênh lệch <= 1000, giữ nguyên calculatedTotal
             
             // ✅ Xử lý địa chỉ
             const normalizedInfo = normalizeGuestInfo(ThongTinNhanHang);
             const diaChiFinal = buildAddressFromInput(DiaChi, normalizedInfo);
             
-            if (!diaChiFinal) {
-                return errorResponse(res, 'Địa chỉ giao hàng không hợp lệ', HTTP_STATUS.BAD_REQUEST);
+            if (!diaChiFinal || diaChiFinal.trim().length < 10) {
+                return errorResponse(res, 'Địa chỉ giao hàng không hợp lệ (phải có ít nhất 10 ký tự)', HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            // ✅ Validate userId
+            if (!userId) {
+                return errorResponse(res, 'Không xác định được khách hàng', HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            // Validate userId format (phải là ObjectId hợp lệ hoặc guest code)
+            const isValidUserId = mongoose.Types.ObjectId.isValid(userId) || 
+                                 (typeof userId === 'string' && userId.startsWith('guest-'));
+            if (!isValidUserId) {
+                return errorResponse(res, `Mã khách hàng không hợp lệ: ${userId}`, HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            // ✅ Validate PhuongThucThanhToan với enum
+            const validPaymentMethods = ['COD', 'VNPay', 'VNPayQR', 'BANK', 'CARD', 'MoMo', 'Chuyển khoản'];
+            if (!validPaymentMethods.includes(PhuongThucThanhToan)) {
+                return errorResponse(res, `Phương thức thanh toán không hợp lệ: ${PhuongThucThanhToan}`, HTTP_STATUS.BAD_REQUEST);
             }
             
             // ✅ Sử dụng Transaction để đảm bảo atomicity
@@ -636,25 +826,68 @@ class DonHangController {
             
             try {
                 // Giảm số lượng tồn kho
+                const SanPhamModel = getSanPhamModel();
+                
                 for (const item of validatedProducts) {
-                    const product = await SanPham.findById(item.MaSanPham).session(session);
-                    await product.decreaseStock(item.SoLuong);
+                    const productId = mongoose.Types.ObjectId.isValid(item.MaSanPham) 
+                        ? new mongoose.Types.ObjectId(item.MaSanPham)
+                        : item.MaSanPham;
+                    
+                    const product = await SanPhamModel.findById(productId).session(session);
+                    
+                    if (!product) {
+                        throw new Error(`Sản phẩm không tồn tại trong transaction: ${item.MaSanPham}`);
+                    }
+                    
+                    // Kiểm tra lại tồn kho trong transaction (có thể đã thay đổi)
+                    if (!product.hasStock(item.SoLuong)) {
+                        throw new Error(`Sản phẩm "${product.TenSanPham}" không đủ hàng. Chỉ còn ${product.SoLuong} sản phẩm.`);
+                    }
+                    
+                    await product.decreaseStock(item.SoLuong, { session });
+                }
+                
+                // Convert MaSanPham sang ObjectId cho validatedProducts và đảm bảo tất cả trường required
+                const productsForOrder = validatedProducts.map(item => {
+                    const productId = mongoose.Types.ObjectId.isValid(item.MaSanPham)
+                        ? new mongoose.Types.ObjectId(item.MaSanPham)
+                        : item.MaSanPham;
+                    
+                    return {
+                        MaSanPham: productId,
+                        TenSanPham: item.TenSanPham || 'Sản phẩm không xác định',
+                        SoLuong: item.SoLuong,
+                        Gia: item.Gia || 0,
+                        TongTien: item.TongTien || 0,
+                        HinhAnhChinh: item.HinhAnhChinh || ''
+                    };
+                });
+                
+                // Validate dữ liệu trước khi tạo
+                const orderData = {
+                    MaKhachHang: userId,
+                    SanPham: productsForOrder,
+                    TongTien: finalTotal,
+                    DiaChi: diaChiFinal.trim(),
+                    ThongTinNhanHang: Object.keys(normalizedInfo).length > 0 ? normalizedInfo : null,
+                    PhiVanChuyen: 0,
+                    PhuongThucThanhToan: PhuongThucThanhToan,
+                    TrangThaiThanhToan: 'pending',
+                    TrangThai: ORDER_STATUS.PENDING,
+                    GhiChu: (GhiChu || '').trim(),
+                    Voucher: Voucher || null
+                };
+                
+                // Log dữ liệu trong development
+                if (process.env.NODE_ENV === 'development') {
+                    console.log('Creating order with data:', JSON.stringify({
+                        ...orderData,
+                        SanPham: orderData.SanPham.map(p => ({ ...p, MaSanPham: p.MaSanPham.toString() }))
+                    }, null, 2));
                 }
                 
                 // Tạo đơn hàng
-                const donHang = await DonHang.create([{
-                    MaKhachHang: userId,
-                    SanPham: validatedProducts,
-                    TongTien: calculatedTotal,
-                    DiaChi: diaChiFinal,
-                    ThongTinNhanHang: normalizedInfo,
-                    PhiVanChuyen: 0,
-                    PhuongThucThanhToan: PhuongThucThanhToan,
-                    TrangThaiThanhToan: PhuongThucThanhToan === PAYMENT_METHODS.COD ? 'pending' : 'pending',
-                    TrangThai: ORDER_STATUS.PENDING,
-                    GhiChu: GhiChu || '',
-                    Voucher: Voucher || null
-                }], { session });
+                const donHang = await DonHang.create([orderData], { session });
                 
                 await session.commitTransaction();
                 session.endSession();
@@ -665,28 +898,84 @@ class DonHangController {
                 const response = {
                     orderId: orderId,
                     donHang: donHangObj,
-                    requiresPayment: PhuongThucThanhToan !== PAYMENT_METHODS.COD,
+                    requiresPayment: PhuongThucThanhToan !== PAYMENT_METHODS.COD && PhuongThucThanhToan !== 'COD',
                     paymentMethod: PhuongThucThanhToan
                 };
                 
                 return successResponse(
                     res,
                     response,
-                    PhuongThucThanhToan === PAYMENT_METHODS.COD
+                    (PhuongThucThanhToan === PAYMENT_METHODS.COD || PhuongThucThanhToan === 'COD')
                         ? 'Đơn hàng đã được tạo'
                         : 'Đơn hàng đã được tạo. Vui lòng thanh toán.',
                     HTTP_STATUS.OK
                 );
             } catch (transactionError) {
+                // Đảm bảo abort transaction và đóng session
+                try {
+                    if (session.inTransaction()) {
                 await session.abortTransaction();
+                    }
+                } catch (abortError) {
+                    console.error('Error aborting transaction:', abortError);
+                }
+                try {
                 session.endSession();
+                } catch (endError) {
+                    console.error('Error ending session:', endError);
+                }
+                
+                // Log chi tiết lỗi transaction
+                console.error('=== TRANSACTION ERROR IN CHECKOUT ===');
+                console.error('Error name:', transactionError.name);
+                console.error('Error message:', transactionError.message);
+                if (transactionError.errors) {
+                    console.error('Validation errors:', JSON.stringify(transactionError.errors, null, 2));
+                }
+                console.error('Stack trace:', transactionError.stack);
+                console.error('=====================================');
+                
                 throw transactionError;
             }
         } catch (error) {
-            if (process.env.NODE_ENV === 'development') {
-                console.error('Lỗi khi thanh toán đơn hàng: ', error);
+            // Log chi tiết lỗi
+            console.error('=== CHECKOUT ERROR ===');
+            console.error('Error name:', error.name);
+            console.error('Error message:', error.message);
+            if (error.errors) {
+                console.error('Validation errors:', JSON.stringify(error.errors, null, 2));
             }
-            return errorResponse(res, 'Lỗi khi thanh toán đơn hàng: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
+            if (error.stack) {
+                console.error('Stack trace:', error.stack);
+            }
+            console.error('Request body:', JSON.stringify({
+                ...req.body,
+                SanPham: req.body?.SanPham?.map(p => ({ MaSanPham: p.MaSanPham, SoLuong: p.SoLuong }))
+            }, null, 2));
+            console.error('User ID:', req.user?.id);
+            console.error('====================');
+            
+            // Xử lý các loại lỗi khác nhau
+            let errorMessage = 'Lỗi khi thanh toán đơn hàng';
+            let statusCode = HTTP_STATUS.INTERNAL_SERVER_ERROR;
+            
+            if (error.name === 'ValidationError') {
+                // Lấy tất cả lỗi validation
+                const validationErrors = error.errors ? Object.values(error.errors).map(e => e.message).join(', ') : error.message;
+                errorMessage = `Dữ liệu không hợp lệ: ${validationErrors}`;
+                statusCode = HTTP_STATUS.BAD_REQUEST;
+            } else if (error.name === 'CastError') {
+                errorMessage = `Dữ liệu không đúng định dạng: ${error.message}`;
+                statusCode = HTTP_STATUS.BAD_REQUEST;
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+            
+            return errorResponse(
+                res, 
+                errorMessage,
+                statusCode
+            );
         }
     }
     
@@ -739,7 +1028,8 @@ class DonHangController {
                 }
                 
                 // ✅ Kiểm tra sản phẩm tồn tại và còn hàng
-                const product = await SanPham.findById(productId);
+                const SanPhamModel = getSanPhamModel();
+                const product = await SanPhamModel.findById(productId);
                 if (!product) {
                     return errorResponse(res, `Sản phẩm không tồn tại: ${productId}`, HTTP_STATUS.NOT_FOUND);
                 }
@@ -752,28 +1042,54 @@ class DonHangController {
                     );
                 }
                 
-                // ✅ Tính giá (có khuyến mãi)
-                const price = product.KhuyenMai > 0 
-                    ? product.Gia * (1 - product.KhuyenMai / 100) 
-                    : product.Gia;
-                const itemTotal = price * quantity;
+                const selectionInput = item.selectedDungTich || item.SelectedDungTich || item.volume;
+                const { option: resolvedVolume, options: volumeOptions, explicitRequest } = resolveOrderProductVolume(product, selectionInput);
+
+                if (volumeOptions.length && explicitRequest && !resolvedVolume) {
+                    return errorResponse(
+                        res,
+                        `Dung tích đã chọn cho sản phẩm "${product.TenSanPham}" không hợp lệ`,
+                        HTTP_STATUS.BAD_REQUEST
+                    );
+                }
+
+                const { finalPrice } = computeVariantPriceForOrder(product, resolvedVolume);
+                const itemTotal = finalPrice * quantity;
                 calculatedTotal += itemTotal;
                 
                 validatedProducts.push({
                     MaSanPham: productId,
                     TenSanPham: product.TenSanPham,
                     SoLuong: quantity,
-                    Gia: price,
+                    Gia: finalPrice,
                     TongTien: itemTotal,
-                    HinhAnhChinh: product.HinhAnhChinh
+                    HinhAnhChinh: product.HinhAnhChinh,
+                    SelectedDungTich: formatSelectedVolumeForOrder(resolvedVolume)
                 });
             }
             
-            // ✅ Validate tổng tiền (cho phép sai số nhỏ do làm tròn)
-            if (Math.abs(calculatedTotal - parseFloat(TongTien || 0)) > 1000) {
+            // ✅ Validate tổng tiền (giống checkout)
+            const frontendTotal = parseFloat(TongTien || 0);
+            const difference = Math.abs(calculatedTotal - frontendTotal);
+            const maxDiscountPercent = 0.2; // Cho phép giảm tối đa 20%
+            const maxDiscountAmount = calculatedTotal * maxDiscountPercent;
+            
+            let finalTotal = calculatedTotal;
+            
+            if (frontendTotal < calculatedTotal) {
+                if (difference <= maxDiscountAmount) {
+                    finalTotal = frontendTotal;
+                } else {
                 return errorResponse(
                     res,
-                    `Tổng tiền không khớp. Tính toán: ${calculatedTotal}, Nhận được: ${TongTien}`,
+                        `Tổng tiền không khớp. Tính toán: ${calculatedTotal.toLocaleString('vi-VN')}, Nhận được: ${frontendTotal.toLocaleString('vi-VN')}`,
+                        HTTP_STATUS.BAD_REQUEST
+                    );
+                }
+            } else if (frontendTotal > calculatedTotal && difference > 1000) {
+                return errorResponse(
+                    res,
+                    `Tổng tiền không khớp. Tính toán: ${calculatedTotal.toLocaleString('vi-VN')}, Nhận được: ${frontendTotal.toLocaleString('vi-VN')}`,
                     HTTP_STATUS.BAD_REQUEST
                 );
             }
@@ -791,21 +1107,45 @@ class DonHangController {
             
             try {
                 // Giảm số lượng tồn kho
+                const SanPhamModel = getSanPhamModel();
+                
                 for (const item of validatedProducts) {
-                    const product = await SanPham.findById(item.MaSanPham).session(session);
-                    await product.decreaseStock(item.SoLuong);
+                    const productId = mongoose.Types.ObjectId.isValid(item.MaSanPham) 
+                        ? new mongoose.Types.ObjectId(item.MaSanPham)
+                        : item.MaSanPham;
+                    
+                    const product = await SanPhamModel.findById(productId).session(session);
+                    
+                    if (!product) {
+                        throw new Error(`Sản phẩm không tồn tại trong transaction: ${item.MaSanPham}`);
+                    }
+                    
+                    // Kiểm tra lại tồn kho trong transaction (có thể đã thay đổi)
+                    if (!product.hasStock(item.SoLuong)) {
+                        throw new Error(`Sản phẩm "${product.TenSanPham}" không đủ hàng. Chỉ còn ${product.SoLuong} sản phẩm.`);
+                    }
+                    
+                    await product.decreaseStock(item.SoLuong, { session });
                 }
+                
+                // Convert MaSanPham sang ObjectId cho validatedProducts
+                const productsForOrder = validatedProducts.map(item => ({
+                    ...item,
+                    MaSanPham: mongoose.Types.ObjectId.isValid(item.MaSanPham)
+                        ? new mongoose.Types.ObjectId(item.MaSanPham)
+                        : item.MaSanPham
+                }));
                 
                 // Tạo đơn hàng
                 const donHang = await DonHang.create([{
                     MaKhachHang: guestId,
-                    SanPham: validatedProducts,
-                    TongTien: calculatedTotal,
+                    SanPham: productsForOrder,
+                    TongTien: finalTotal,
                     DiaChi: diaChiFinal,
                     ThongTinNhanHang: normalizedInfo,
                     PhiVanChuyen: 0,
                     PhuongThucThanhToan: PhuongThucThanhToan,
-                    TrangThaiThanhToan: PhuongThucThanhToan === PAYMENT_METHODS.COD ? 'pending' : 'pending',
+                    TrangThaiThanhToan: (PhuongThucThanhToan === PAYMENT_METHODS.COD || PhuongThucThanhToan === 'COD') ? 'pending' : 'pending',
                     TrangThai: ORDER_STATUS.PENDING,
                     GhiChu: GhiChu || '',
                     Voucher: Voucher || null
@@ -820,7 +1160,7 @@ class DonHangController {
                 const response = {
                     orderId: orderIdStr,
                     donHang: donHangObj,
-                    requiresPayment: PhuongThucThanhToan !== PAYMENT_METHODS.COD,
+                    requiresPayment: PhuongThucThanhToan !== PAYMENT_METHODS.COD && PhuongThucThanhToan !== 'COD',
                     paymentMethod: PhuongThucThanhToan
                 };
 
@@ -830,15 +1170,45 @@ class DonHangController {
 
                 return successResponse(res, response, message, HTTP_STATUS.OK);
             } catch (transactionError) {
+                // Đảm bảo abort transaction và đóng session
+                if (session.inTransaction()) {
                 await session.abortTransaction();
+                }
                 session.endSession();
+                
+                // Log chi tiết lỗi transaction
+                if (process.env.NODE_ENV === 'development') {
+                    console.error('Transaction error in guestCheckout:', transactionError);
+                    console.error('Transaction error stack:', transactionError.stack);
+                }
+                
                 throw transactionError;
             }
         } catch (error) {
+            // Log chi tiết lỗi
             if (process.env.NODE_ENV === 'development') {
-                console.error('Lỗi khi guest checkout:', error);
+                console.error('=== GUEST CHECKOUT ERROR ===');
+                console.error('Error message:', error.message);
+                console.error('Error name:', error.name);
+                console.error('Stack trace:', error.stack);
+                console.error('Request body:', JSON.stringify(req.body, null, 2));
+                console.error('============================');
             }
-            return errorResponse(res, 'Lỗi khi thanh toán đơn hàng', HTTP_STATUS.INTERNAL_SERVER_ERROR);
+            
+            // Xử lý các loại lỗi khác nhau
+            let errorMessage = 'Lỗi khi thanh toán đơn hàng';
+            
+            if (error.name === 'ValidationError') {
+                errorMessage = `Dữ liệu không hợp lệ: ${error.message}`;
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+            
+            return errorResponse(
+                res, 
+                process.env.NODE_ENV === 'development' ? errorMessage : 'Lỗi khi thanh toán đơn hàng. Vui lòng thử lại.',
+                HTTP_STATUS.INTERNAL_SERVER_ERROR
+            );
         }
     }
 }

@@ -69,15 +69,22 @@ router.post('/upload', uploadLimiter, async (req, res) => {
         }
 
         // Kiểm tra Cloudinary config
-        if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+        const missingConfigs = [];
+        if (!process.env.CLOUDINARY_CLOUD_NAME) missingConfigs.push('CLOUDINARY_CLOUD_NAME');
+        if (!process.env.CLOUDINARY_API_KEY) missingConfigs.push('CLOUDINARY_API_KEY');
+        if (!process.env.CLOUDINARY_API_SECRET) missingConfigs.push('CLOUDINARY_API_SECRET');
+        
+        if (missingConfigs.length > 0) {
             console.error('❌ Cloudinary config missing:', {
                 cloud_name: !!process.env.CLOUDINARY_CLOUD_NAME,
                 api_key: !!process.env.CLOUDINARY_API_KEY,
-                api_secret: !!process.env.CLOUDINARY_API_SECRET
+                api_secret: !!process.env.CLOUDINARY_API_SECRET,
+                missing: missingConfigs
             });
             return res.status(500).json({
                 success: false,
-                message: 'Cấu hình Cloudinary chưa được thiết lập',
+                message: `Cấu hình Cloudinary chưa được thiết lập. Vui lòng thêm các biến môi trường sau vào file .env: ${missingConfigs.join(', ')}`,
+                missingConfigs: missingConfigs
             });
         }
 

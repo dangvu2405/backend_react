@@ -1,6 +1,7 @@
 const TaiKhoan = require('../models/Taikhoan');
 const Role = require('../models/Role');
 const Session = require('../models/Session');
+const OAuthCode = require('../models/OAuthCode');
 const crypto = require('crypto');
 const { sendPasswordResetEmail, sendWelcomeEmail, sendEmail } = require('../../utils/email');
 const { hashPassword, comparePassword } = require('../../utils/password');
@@ -331,6 +332,72 @@ class AuthController {
                 return res.redirect(`${frontendUrl}/login?error=oauth_failed`);
             }
 
+            // Tạo OAuth code để đổi lấy token (code chỉ có hiệu lực 5 phút)
+            const code = crypto.randomBytes(32).toString('hex');
+            await OAuthCode.create({
+                code: code,
+                userId: user._id,
+                expiresAt: new Date(Date.now() + 5 * 60 * 1000) // 5 phút
+            });
+
+            const frontendUrl = getFrontendUrl();
+            const redirectUrl = `${frontendUrl}/auth/callback?code=${encodeURIComponent(code)}`;
+            
+            return res.redirect(redirectUrl);
+        } catch (error) {
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi xử lý OAuth callback: ', error);
+            }
+            const frontendUrl = getFrontendUrl();
+            return res.redirect(`${frontendUrl}/login?error=oauth_error`);
+        }
+    }
+
+    async oauthExchange(req, res) {
+        try {
+            const { code } = req.body;
+            
+            if (!code) {
+                return errorResponse(res, 'Code là bắt buộc', HTTP_STATUS.BAD_REQUEST);
+            }
+
+            // Trim code để loại bỏ whitespace
+            const trimmedCode = code.trim();
+            
+            if (process.env.NODE_ENV === 'development') {
+                console.log('OAuth Exchange - Received code:', trimmedCode ? `${trimmedCode.substring(0, 20)}...` : 'missing');
+                console.log('OAuth Exchange - Code length:', trimmedCode?.length);
+            }
+
+            // Tìm và xóa OAuth code
+            const oauthCode = await OAuthCode.findOneAndDelete({ code: trimmedCode });
+            
+            if (!oauthCode) {
+                if (process.env.NODE_ENV === 'development') {
+                    // Kiểm tra xem code có tồn tại không (không xóa)
+                    const existingCode = await OAuthCode.findOne({ code: trimmedCode });
+                    console.log('OAuth Exchange - Code not found. Exists in DB:', !!existingCode);
+                    if (existingCode) {
+                        console.log('OAuth Exchange - Code expiresAt:', existingCode.expiresAt);
+                        console.log('OAuth Exchange - Current time:', new Date());
+                        console.log('OAuth Exchange - Is expired:', existingCode.expiresAt < new Date());
+                    }
+                }
+                return errorResponse(res, 'Code không hợp lệ hoặc đã hết hạn', HTTP_STATUS.BAD_REQUEST);
+            }
+
+            // Kiểm tra code đã hết hạn chưa
+            if (oauthCode.expiresAt < new Date()) {
+                return errorResponse(res, 'Code đã hết hạn', HTTP_STATUS.BAD_REQUEST);
+            }
+
+            // Lấy user từ code
+            const user = await TaiKhoan.findById(oauthCode.userId);
+            if (!user) {
+                return errorResponse(res, MESSAGES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
+            }
+
+            // Tạo tokens
             const tokens = generateTokenPair(user);
             const refreshToken = crypto.randomBytes(32).toString('hex');
             const session = await Session.create({
@@ -340,16 +407,29 @@ class AuthController {
             });
             await session.save();
 
-            const frontendUrl = getFrontendUrl();
-            const redirectUrl = `${frontendUrl}/auth/callback#token=${encodeURIComponent(tokens.accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}`;
-            
-            return res.redirect(redirectUrl);
+            res.cookie('refreshToken', refreshToken, {
+                httpOnly: true, 
+                secure: process.env.NODE_ENV === 'production', 
+                maxAge: 7 * 24 * 60 * 60 * 1000 
+            });
+
+            // Trả về tokens
+            return successResponse(res, {
+                accessToken: tokens.accessToken,
+                refreshToken: refreshToken,
+                user: {
+                    id: user._id,
+                    TenDangNhap: user.TenDangNhap,
+                    HoTen: user.HoTen,
+                    Email: user.Email,
+                    MaVaiTro: user.MaVaiTro
+                }
+            }, 'Đăng nhập thành công', HTTP_STATUS.OK);
         } catch (error) {
             if (process.env.NODE_ENV === 'development') {
-                console.error('Lỗi khi xử lý OAuth callback: ', error);
+                console.error('Lỗi khi đổi OAuth code: ', error);
             }
-            const frontendUrl = getFrontendUrl();
-            return res.redirect(`${frontendUrl}/login?error=oauth_error`);
+            return errorResponse(res, 'Lỗi khi xử lý đăng nhập', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
 
