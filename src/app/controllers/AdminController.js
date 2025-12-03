@@ -245,6 +245,13 @@ class AdminController {
         return DonHangController.cancelDonHang(req, res);
     }
 
+    /**
+     * Admin từ chối yêu cầu hủy đơn hàng
+     */
+    async rejectCancelOrder(req, res) {
+        return DonHangController.rejectCancelDonHang(req, res);
+    }
+
     async checkout(req, res) {
         return DonHangController.checkout(req, res);
     }

@@ -65,6 +65,7 @@ router.get('/orders/:id', authMiddleware, adminMiddleware, AdminController.getOr
 router.put('/orders/:id', authMiddleware, adminMiddleware, AdminController.updateOrder);
 router.delete('/orders/:id', authMiddleware, adminMiddleware, AdminController.deleteOrder);
 router.post('/orders/:id/cancel', authMiddleware, adminMiddleware, AdminController.cancelOrder);
+router.post('/orders/:id/cancel/reject', authMiddleware, adminMiddleware, AdminController.rejectCancelOrder);
 
 // ==========================
 // CART

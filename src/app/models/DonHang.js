@@ -147,6 +147,53 @@ const DonHangSchema = new mongoose.Schema({
         type: Date,
         default: null
     },
+    /**
+     * Trạng thái quy trình hủy đơn hàng (khác với trạng thái vận hành đơn hàng trong TrangThai)
+     * - none: không có yêu cầu hủy
+     * - requested: khách đã gửi yêu cầu hủy, chờ admin duyệt
+     * - approved: yêu cầu đã được admin duyệt và đơn đã bị hủy
+     * - rejected: admin từ chối yêu cầu hủy
+     */
+    TrangThaiHuy: {
+        type: String,
+        enum: ['none', 'requested', 'approved', 'rejected'],
+        default: 'none'
+    },
+    /**
+     * Lưu trạng thái đơn hàng trước khi khách gửi yêu cầu hủy
+     * Dùng để khôi phục lại khi admin từ chối yêu cầu hủy
+     */
+    TrangThaiTruocKhiHuy: {
+        type: String,
+        enum: ['pending', 'confirmed', 'shipping', 'delivered', 'cancelled'],
+        default: null
+    },
+    /**
+     * Thông tin người yêu cầu hủy & admin xử lý (tham chiếu tới bảng tài khoản nếu có)
+     */
+    NguoiYeuCauHuy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Taikhoan',
+        default: null
+    },
+    NgayYeuCauHuy: {
+        type: Date,
+        default: null
+    },
+    HuyByAdmin: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Taikhoan',
+        default: null
+    },
+    NgayXuLyHuy: {
+        type: Date,
+        default: null
+    },
+    LyDoHuyAdmin: {
+        type: String,
+        default: null,
+        maxlength: [500, 'Lý do xử lý hủy của admin không được quá 500 ký tự']
+    },
     TrangThaiThanhToan: {
         type: String,
         enum: {

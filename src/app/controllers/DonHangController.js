@@ -504,11 +504,16 @@ class DonHangController {
     async deleteDonHang(req, res) {
         return successResponse(res, null, 'Đơn hàng đã được xóa', HTTP_STATUS.OK);
     }
-    async cancelDonHang(req, res) {
+    /**
+     * Khách hàng gửi yêu cầu hủy đơn hàng (không hủy ngay)
+     * Đơn hàng sẽ được chuyển sang trạng thái yêu cầu hủy (TrangThaiHuy = requested)
+     * Admin sẽ xác nhận hủy hoặc từ chối ở các API riêng
+     */
+    async requestCancelDonHang(req, res) {
         try {
             const orderId = req.params.id;
             const userId = req.user?.id;
-            const { reason } = req.body; // Lý do hủy đơn hàng
+            const { reason } = req.body;
             
             if (!orderId) {
                 return errorResponse(res, 'Thiếu ID đơn hàng', HTTP_STATUS.BAD_REQUEST);
@@ -516,41 +521,107 @@ class DonHangController {
 
             // Tìm đơn hàng
             const donHang = await DonHang.findById(orderId);
-            
             if (!donHang) {
                 return errorResponse(res, MESSAGES.ORDER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
             }
 
-            // Safely populate customer for permission check
-            const customer = await populateCustomer(donHang.MaKhachHang);
-            if (customer) {
-                donHang.MaKhachHang = customer;
+            // Kiểm tra quyền: chỉ chủ đơn hàng mới được gửi yêu cầu hủy
+            const orderCustomerId = typeof donHang.MaKhachHang === 'string'
+                ? donHang.MaKhachHang
+                : (typeof donHang.MaKhachHang === 'object' && donHang.MaKhachHang?._id
+                    ? donHang.MaKhachHang._id.toString()
+                    : donHang.MaKhachHang?.toString() || donHang.MaKhachHang);
+
+            if (!userId || orderCustomerId !== userId.toString()) {
+                return errorResponse(res, 'Bạn không có quyền yêu cầu hủy đơn hàng này', HTTP_STATUS.FORBIDDEN);
             }
 
-            // Kiểm tra quyền: User chỉ có thể hủy đơn của mình, trừ khi là admin
+            // Không cho phép yêu cầu hủy khi đơn đã hủy hoặc đã giao
+            if (!donHang.canCancel()) {
+                const statusMessages = {
+                    shipping: 'Đơn hàng đang được giao, không thể yêu cầu hủy',
+                    delivered: 'Đơn hàng đã được giao, không thể yêu cầu hủy',
+                    cancelled: 'Đơn hàng đã được hủy trước đó'
+                };
+                const message = statusMessages[donHang.TrangThai] || 'Đơn hàng không thể được hủy ở trạng thái này';
+                return errorResponse(res, message, HTTP_STATUS.BAD_REQUEST);
+            }
+
+            // Nếu đã có yêu cầu hủy đang chờ xử lý
+            if (donHang.TrangThaiHuy === 'requested') {
+                return errorResponse(res, 'Đơn hàng đã có yêu cầu hủy và đang chờ admin xử lý', HTTP_STATUS.BAD_REQUEST);
+            }
+
+            // Lưu trạng thái hiện tại để có thể khôi phục khi admin từ chối
+            donHang.TrangThaiTruocKhiHuy = donHang.TrangThai;
+            donHang.TrangThaiHuy = 'requested';
+            donHang.LyDoHuy = reason || 'Khách hàng yêu cầu hủy đơn hàng';
+            donHang.NguoiYeuCauHuy = userId;
+            donHang.NgayYeuCauHuy = new Date();
+
+            const existingNote = donHang.GhiChu || '';
+            const requestNote = `Khách yêu cầu hủy đơn hàng${reason ? `: ${reason}` : ''}`;
+            donHang.GhiChu = existingNote ? `${existingNote}\n\n${requestNote}` : requestNote;
+
+            await donHang.save();
+
+            const updatedOrder = await DonHang.findById(orderId)
+                .populate('SanPham.MaSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh')
+                .lean();
+
+            return successResponse(
+                res,
+                { donHang: updatedOrder },
+                'Yêu cầu hủy đơn hàng đã được gửi. Vui lòng chờ admin xác nhận.',
+                HTTP_STATUS.OK
+            );
+        } catch (error) {
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi gửi yêu cầu hủy đơn hàng: ', error);
+            }
+            return errorResponse(res, 'Lỗi khi gửi yêu cầu hủy đơn hàng: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Admin xác nhận hủy đơn hàng (thực hiện hủy thật sự)
+     * Được dùng trong route /admin/orders/:id/cancel
+     */
+    async cancelDonHang(req, res) {
+        try {
+            const orderId = req.params.id;
+            const adminId = req.user?.id;
+            const { reason } = req.body; // Lý do hủy thêm của admin (optional)
+
+            if (!orderId) {
+                return errorResponse(res, 'Thiếu ID đơn hàng', HTTP_STATUS.BAD_REQUEST);
+            }
+
+            // Tìm đơn hàng
+            const donHang = await DonHang.findById(orderId);
+            if (!donHang) {
+                return errorResponse(res, MESSAGES.ORDER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
+            }
+
+            // Chỉ admin mới được gọi API này (route đã có adminMiddleware, đây là lớp bảo vệ bổ sung)
             const isAdmin = req.user?.MaVaiTro?.TenVaiTro === 'admin' || 
                            req.user?.role === 'admin' ||
                            (req.user?.MaVaiTro && typeof req.user.MaVaiTro === 'object' && req.user.MaVaiTro.TenVaiTro === 'admin');
             
             if (!isAdmin) {
-                // Kiểm tra user có phải chủ đơn hàng không
-                const orderCustomerId = typeof donHang.MaKhachHang === 'string' 
-                    ? donHang.MaKhachHang 
-                    : (typeof donHang.MaKhachHang === 'object' && donHang.MaKhachHang?._id 
-                        ? donHang.MaKhachHang._id.toString() 
-                        : donHang.MaKhachHang?.toString() || donHang.MaKhachHang);
-                
-                if (orderCustomerId !== userId?.toString()) {
-                    return errorResponse(res, 'Bạn không có quyền hủy đơn hàng này', HTTP_STATUS.FORBIDDEN);
-                }
+                return errorResponse(res, 'Chỉ admin mới có quyền hủy đơn hàng', HTTP_STATUS.FORBIDDEN);
+            }
+
+            // Không cho hủy nếu đã hủy trước đó
+            if (donHang.TrangThai === ORDER_STATUS.CANCELLED) {
+                return errorResponse(res, 'Đơn hàng đã được hủy trước đó', HTTP_STATUS.BAD_REQUEST);
             }
 
             // Kiểm tra trạng thái đơn hàng có thể hủy không
             if (!donHang.canCancel()) {
                 const statusMessages = {
-                    'shipping': 'Đơn hàng đang được giao, không thể hủy',
-                    'delivered': 'Đơn hàng đã được giao, không thể hủy',
-                    'cancelled': 'Đơn hàng đã được hủy trước đó'
+                    shipping: 'Đơn hàng đang được giao, không thể hủy',
+                    delivered: 'Đơn hàng đã được giao, không thể hủy'
                 };
                 const message = statusMessages[donHang.TrangThai] || 'Đơn hàng không thể được hủy ở trạng thái này';
                 return errorResponse(res, message, HTTP_STATUS.BAD_REQUEST);
@@ -561,10 +632,9 @@ class DonHangController {
             const originalPaymentStatus = donHang.TrangThaiThanhToan;
             const products = donHang.SanPham || [];
 
-            // Cập nhật lại số lượng sản phẩm trong kho
-            // SanPham đã được import ở đầu file, không cần require lại
             const stockUpdates = [];
             
+            // Cập nhật lại số lượng sản phẩm trong kho
             for (const item of products) {
                 try {
                     const productId = item.MaSanPham || item.id || item._id;
@@ -573,7 +643,6 @@ class DonHangController {
                     const product = await SanPham.findById(productId);
                     if (product) {
                         const quantity = item.SoLuong || item.quantity || 1;
-                        // Tăng lại số lượng trong kho
                         await product.increaseStock(quantity);
                         stockUpdates.push({ productId, productName: product.TenSanPham, quantity });
                     }
@@ -581,23 +650,30 @@ class DonHangController {
                     if (process.env.NODE_ENV === 'development') {
                         console.error(`Lỗi khi cập nhật kho cho sản phẩm ${item.MaSanPham}:`, stockError);
                     }
-                    // Tiếp tục xử lý các sản phẩm khác
                 }
             }
 
             // Cập nhật trạng thái đơn hàng
-            const cancelReason = reason || 'Khách hàng yêu cầu hủy đơn hàng';
+            const cancelReason = reason ||
+                donHang.LyDoHuy ||
+                (donHang.TrangThaiHuy === 'requested' ? 'Khách hàng yêu cầu hủy đơn hàng' : 'Admin hủy đơn hàng');
+
             donHang.LyDoHuy = cancelReason;
             donHang.NgayHuy = new Date();
             const existingNote = donHang.GhiChu || '';
-            donHang.GhiChu = existingNote ? `${existingNote}\n\nLý do hủy: ${cancelReason}` : `Lý do hủy: ${cancelReason}`;
+            const cancelNote = `Đơn hàng đã được admin hủy${cancelReason ? `: ${cancelReason}` : ''}`;
+            donHang.GhiChu = existingNote ? `${existingNote}\n\n${cancelNote}` : cancelNote;
             donHang.TrangThai = ORDER_STATUS.CANCELLED;
+
+            // Cập nhật trạng thái quy trình hủy
+            donHang.TrangThaiHuy = 'approved';
+            donHang.HuyByAdmin = adminId || null;
+            donHang.NgayXuLyHuy = new Date();
             
             // Xử lý hoàn tiền nếu đã thanh toán
             if (originalPaymentStatus === PAYMENT_STATUS.PAID) {
                 donHang.TrangThaiThanhToan = PAYMENT_STATUS.REFUNDED;
-                // TODO: Tích hợp với payment gateway để hoàn tiền thực tế
-                // Ví dụ: VNPay refund, bank transfer refund, etc.
+                // TODO: tích hợp gateway thanh toán để hoàn tiền thực tế (VNPay, MoMo, ...)
             }
 
             await donHang.save();
@@ -621,7 +697,6 @@ class DonHangController {
                     if (process.env.NODE_ENV === 'development') {
                         console.error('Lỗi khi gửi email thông báo hủy đơn hàng:', emailError);
                     }
-                    // Không fail nếu email lỗi, vẫn hủy đơn thành công
                 }
             }
 
@@ -630,7 +705,6 @@ class DonHangController {
                 .populate('SanPham.MaSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh')
                 .lean();
             
-            // Safely populate customer
             if (updatedOrder) {
                 const customer = await populateCustomer(updatedOrder.MaKhachHang);
                 if (customer) {
@@ -638,16 +712,90 @@ class DonHangController {
                 }
             }
 
-            return successResponse(res, { 
+            return successResponse(
+                res,
+                {
                 donHang: updatedOrder,
                 stockUpdates: stockUpdates.length > 0 ? stockUpdates : undefined,
                 refundStatus: originalPaymentStatus === PAYMENT_STATUS.PAID ? 'pending' : null
-            }, 'Đơn hàng đã được hủy thành công', HTTP_STATUS.OK);
+                },
+                'Đơn hàng đã được hủy thành công',
+                HTTP_STATUS.OK
+            );
         } catch (error) {
             if (process.env.NODE_ENV === 'development') {
                 console.error('Lỗi khi hủy đơn hàng: ', error);
             }
             return errorResponse(res, 'Lỗi khi hủy đơn hàng: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Admin từ chối yêu cầu hủy đơn hàng
+     * - Đơn hàng quay lại trạng thái trước khi khách yêu cầu hủy (TrangThaiTruocKhiHuy)
+     */
+    async rejectCancelDonHang(req, res) {
+        try {
+            const orderId = req.params.id;
+            const adminId = req.user?.id;
+            const { reason } = req.body;
+
+            if (!orderId) {
+                return errorResponse(res, 'Thiếu ID đơn hàng', HTTP_STATUS.BAD_REQUEST);
+            }
+
+            const donHang = await DonHang.findById(orderId);
+            if (!donHang) {
+                return errorResponse(res, MESSAGES.ORDER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
+            }
+
+            const isAdmin = req.user?.MaVaiTro?.TenVaiTro === 'admin' ||
+                req.user?.role === 'admin' ||
+                (req.user?.MaVaiTro && typeof req.user.MaVaiTro === 'object' && req.user.MaVaiTro.TenVaiTro === 'admin');
+
+            if (!isAdmin) {
+                return errorResponse(res, 'Chỉ admin mới có quyền xử lý yêu cầu hủy đơn hàng', HTTP_STATUS.FORBIDDEN);
+            }
+
+            if (donHang.TrangThaiHuy !== 'requested') {
+                return errorResponse(
+                    res,
+                    'Đơn hàng hiện không có yêu cầu hủy đang chờ xử lý',
+                    HTTP_STATUS.BAD_REQUEST
+                );
+            }
+
+            // Khôi phục trạng thái trước khi khách yêu cầu hủy (nếu có lưu)
+            if (donHang.TrangThaiTruocKhiHuy) {
+                donHang.TrangThai = donHang.TrangThaiTruocKhiHuy;
+            }
+
+            donHang.TrangThaiHuy = 'rejected';
+            donHang.HuyByAdmin = adminId || null;
+            donHang.NgayXuLyHuy = new Date();
+            donHang.LyDoHuyAdmin = reason || 'Admin từ chối yêu cầu hủy đơn hàng';
+
+            const existingNote = donHang.GhiChu || '';
+            const rejectNote = `Admin từ chối yêu cầu hủy đơn hàng${reason ? `: ${reason}` : ''}`;
+            donHang.GhiChu = existingNote ? `${existingNote}\n\n${rejectNote}` : rejectNote;
+
+            await donHang.save();
+
+            const updatedOrder = await DonHang.findById(orderId)
+                .populate('SanPham.MaSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh')
+                .lean();
+
+            return successResponse(
+                res,
+                { donHang: updatedOrder },
+                'Đã từ chối yêu cầu hủy đơn hàng và khôi phục trạng thái cũ',
+                HTTP_STATUS.OK
+            );
+        } catch (error) {
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi từ chối yêu cầu hủy đơn hàng: ', error);
+            }
+            return errorResponse(res, 'Lỗi khi từ chối yêu cầu hủy đơn hàng: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
     async checkout(req, res) {

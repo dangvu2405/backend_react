@@ -36,8 +36,14 @@ router.get('/orderUser', authMiddleware, DonHangController.getDonHang);
 // GET /orderUser/:id - Xem chi tiết đơn hàng của người dùng
 router.get('/orderUser/:id', authMiddleware, validateObjectId, DonHangController.getDetailDonHang);
 
-// DELETE /orderUser/:id - Hủy đơn hàng
-router.delete('/orderUser/:id', authMiddleware, validateObjectId, validate(cancelOrderSchema, 'body'), DonHangController.cancelDonHang);
+// DELETE /orderUser/:id - Khách hàng gửi yêu cầu hủy đơn hàng (không hủy ngay)
+router.delete(
+    '/orderUser/:id',
+    authMiddleware,
+    validateObjectId,
+    validate(cancelOrderSchema, 'body'),
+    DonHangController.requestCancelDonHang
+);
 
 // POST /changepassword - Đổi mật khẩu tài khoản
 router.post('/changepassword', authMiddleware, TaiKhoanController.changePassword);
