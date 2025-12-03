@@ -30,29 +30,34 @@ router.get('/google', (req, res, next) => {
     passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
 });
 
-router.get('/google/callback',
-    (req, res, next) => {
-        passport.authenticate('google', { session: false }, (err, user, info) => {
-            if (err) {
-                console.error('Google OAuth authentication error:', err);
-                // Kiểm tra lỗi invalid_client
-                if (err.message && err.message.includes('invalid_client')) {
-                    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-                    return res.redirect(`${frontendUrl}/login?error=google_invalid_client`);
-                }
+// Google OAuth callback handler
+const handleGoogleCallback = (req, res, next) => {
+    passport.authenticate('google', { session: false }, (err, user, info) => {
+        if (err) {
+            console.error('Google OAuth authentication error:', err);
+            // Kiểm tra lỗi invalid_client
+            if (err.message && err.message.includes('invalid_client')) {
                 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-                return res.redirect(`${frontendUrl}/login?error=google_auth_failed`);
+                return res.redirect(`${frontendUrl}/login?error=google_invalid_client`);
             }
-            if (!user) {
-                const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-                return res.redirect(`${frontendUrl}/login?error=google_auth_failed`);
-            }
-            req.user = user;
-            next();
-        })(req, res, next);
-    },
-    AuthController.oauthCallback
-);
+            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+            return res.redirect(`${frontendUrl}/login?error=google_auth_failed`);
+        }
+        if (!user) {
+            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+            return res.redirect(`${frontendUrl}/login?error=google_auth_failed`);
+        }
+        req.user = user;
+        next();
+    })(req, res, next);
+};
+
+// Standard callback route
+router.get('/google/callback', handleGoogleCallback, AuthController.oauthCallback);
+
+// Handle malformed callback URLs (e.g., /auth/google/domain.com/auth/callback)
+// This route matches /google/:domain/auth/callback pattern
+router.get('/google/:domain/auth/callback', handleGoogleCallback, AuthController.oauthCallback);
 
 // OAuth error routes
 router.get('/google/error', AuthController.oauthError);

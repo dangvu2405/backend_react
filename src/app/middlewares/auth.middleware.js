@@ -28,7 +28,8 @@ const authMiddleware = async (req, res, next) => {
             /^\/api\/supply-chain\/products\/[^\/]+\/trace$/,
             /^\/cart\/(add-to-cart|get-cart|update-cart|checkout)$/,
             /^\/payment\/vnpay\/(create-payment-url|create-qr|return|ipn)$/,
-            /^\/payment\/(vnpay-callback|momo-callback)$/
+            /^\/payment\/(vnpay-callback|momo-callback)$/,
+            /^\/auth\/google\/.*\/callback$/  // Allow Google OAuth callback with any intermediate segments
         ];
         
         if (publicPaths.includes(req.path)) {
