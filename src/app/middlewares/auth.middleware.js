@@ -23,28 +23,42 @@ const authMiddleware = async (req, res, next) => {
             '/payment/vnpay/return'
         ];
         
-        // ✅ Patterns cho các routes công khai (regex)
-        const publicPathPatterns = [
-            /^\/uploads\/.*$/,  // Static files - /uploads/*
-            /^\/api\/docs/,  // Swagger UI và assets - /api/docs và /api/docs/*
-            /^\/api\/health$/,  // Health check endpoint
-            /^\/api\/products(?:\/[^\/]+)?$/,  // GET products (public) - /api/products và /api/products/:id
-            /^\/api\/categories(?:\/[^\/]+)?$/,  // GET categories (public) - /api/categories và /api/categories/:id
-            /^\/api\/reviews\/product\/[^\/]+(?:\/stats)?$/,  // GET product reviews và stats (public)
-            /^\/api\/supply-chain\/products\/[^\/]+\/trace$/,  // Supply chain trace
-            /^\/cart\/(add-to-cart|get-cart|update-cart|checkout)$/,  // Cart routes (optional auth via optionalAuthMiddleware)
-            /^\/payment\/vnpay\/(create-payment-url|create-qr|return|ipn)$/,  // VNPay routes
-            /^\/payment\/(vnpay-callback|momo-callback)$/,  // Payment callbacks
-            /^\/admin\/categories(?:\/[^\/]+)?$/,  // GET admin categories (public) - /admin/categories và /admin/categories/:id
-            /^\/auth\/google\/.*\/callback$/,  // Google OAuth callback with any segments
-        ];
-        
-        // Kiểm tra exact path match trước
+        // ✅ Kiểm tra exact path match trước
         if (publicPaths.includes(req.path)) {
             return next();
         }
         
-        // Kiểm tra pattern match
+        // ✅ Routes công khai chỉ cho GET requests (xem dữ liệu)
+        const publicGetOnlyPaths = [
+            /^\/api\/products(?:\/[^\/]+)?$/,  // GET products - /api/products và /api/products/:id
+            /^\/api\/categories(?:\/[^\/]+)?$/,  // GET categories - /api/categories và /api/categories/:id
+            /^\/api\/reviews\/product\/[^\/]+(?:\/stats)?$/,  // GET product reviews stats
+            /^\/api\/reviews\/product\/[^\/]+$/,  // GET product reviews list
+            /^\/admin\/categories(?:\/[^\/]+)?$/,  // GET admin categories (public)
+        ];
+        
+        // Nếu là GET request và match publicGetOnlyPaths, cho phép (không cần token)
+        if (req.method === 'GET') {
+            for (const pattern of publicGetOnlyPaths) {
+                if (pattern.test(req.path)) {
+                    return next();
+                }
+            }
+        }
+        
+        // ✅ Patterns cho các routes công khai khác (không phụ thuộc method)
+        const publicPathPatterns = [
+            /^\/uploads\/.*$/,  // Static files - /uploads/*
+            /^\/api\/docs/,  // Swagger UI và assets - /api/docs và /api/docs/*
+            /^\/api\/health$/,  // Health check endpoint
+            /^\/api\/supply-chain\/products\/[^\/]+\/trace$/,  // Supply chain trace
+            /^\/cart\/(add-to-cart|get-cart|update-cart|checkout)$/,  // Cart routes (optional auth via optionalAuthMiddleware)
+            /^\/payment\/vnpay\/(create-payment-url|create-qr|return|ipn)$/,  // VNPay routes
+            /^\/payment\/(vnpay-callback|momo-callback)$/,  // Payment callbacks
+            /^\/auth\/google\/.*\/callback$/,  // Google OAuth callback with any segments
+        ];
+        
+        // Kiểm tra pattern match cho các routes công khai khác
         for (const pattern of publicPathPatterns) {
             if (pattern.test(req.path)) {
                 return next();

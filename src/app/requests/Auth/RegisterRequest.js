@@ -117,12 +117,14 @@ class RegisterRequest extends BaseRequest {
                 const { errorResponse } = require('../../../utils/response');
                 const { HTTP_STATUS } = require('../../../constants');
                 
-                return errorResponse(
+                // Gửi error response và DỪNG lại, không gọi next()
+                errorResponse(
                     this.res,
                     'Dữ liệu không hợp lệ',
                     HTTP_STATUS.BAD_REQUEST,
                     errors
                 );
+                return false; // Trả về false để báo hiệu validation failed
             }
 
             // Nếu pass hết validation, tiếp tục
@@ -134,11 +136,13 @@ class RegisterRequest extends BaseRequest {
             const { errorResponse } = require('../../../utils/response');
             const { HTTP_STATUS } = require('../../../constants');
             
-            return errorResponse(
+            // Gửi error response và DỪNG lại, không gọi next()
+            errorResponse(
                 this.res,
                 'Lỗi khi kiểm tra dữ liệu',
                 HTTP_STATUS.INTERNAL_SERVER_ERROR
             );
+            return false; // Trả về false để báo hiệu validation failed
         }
     }
 }

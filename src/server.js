@@ -100,13 +100,36 @@ app.use(authMiddleware);
 const router = require('./routes/index');
 router(app);
 
-app.use((req, res) => res.status(404).json({ success: false, message: 'API endpoint not found', path: req.path }));
+// 404 handler - phải đặt trước error handler
+app.use((req, res) => {
+    // Kiểm tra xem response đã được gửi chưa
+    if (!res.headersSent) {
+        res.status(404).json({ 
+            success: false, 
+            message: 'API endpoint not found', 
+            path: req.path 
+        });
+    }
+});
 
-app.use((err, req, res) => {
+// Error handler - phải có đủ 4 tham số (err, req, res, next)
+app.use((err, req, res, next) => {
+    // Kiểm tra xem response đã được gửi chưa để tránh gửi 2 lần
+    if (res.headersSent) {
+        return next(err);
+    }
+    
     const status = err.status || err.statusCode || 500;
-    if (status >= 500) console.error('[ERROR]', err.message);
+    if (status >= 500) {
+        console.error('[ERROR]', err.message);
+        if (err.stack && isDevelopment) {
+            console.error('[STACK]', err.stack);
+        }
+    }
+    
     res.status(status).json({
-        success: false, message: err.message || 'Internal Server Error',
+        success: false, 
+        message: err.message || 'Internal Server Error',
         ...(isDevelopment && { stack: err.stack, path: req.path })
     });
 });

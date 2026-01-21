@@ -11,6 +11,16 @@ const { formatBusinessError, createBusinessError } = require('./business.error')
  * @param {Object} options - { transformType: 'auto'|'user'|'product'|'order'|'review', skipTransform: false }
  */
 const successResponse = (res, data = null, message = 'Success', statusCode = 200, options = {}) => {
+    // Kiểm tra xem response đã được gửi chưa để tránh gửi 2 lần
+    if (res.headersSent) {
+        console.warn('⚠️ Attempted to send success response but headers already sent:', {
+            message,
+            statusCode,
+            path: res.req?.path
+        });
+        return res;
+    }
+
     const { transformType = 'auto', skipTransform = false } = options;
     
     // Transform data để loại bỏ field nhạy cảm
@@ -34,6 +44,16 @@ const successResponse = (res, data = null, message = 'Success', statusCode = 200
  * @param {*} errors - Validation errors (optional) - format: { field: [messages] }
  */
 const errorResponse = (res, message = 'Error', statusCode = 500, errors = null) => {
+    // Kiểm tra xem response đã được gửi chưa để tránh gửi 2 lần
+    if (res.headersSent) {
+        console.warn('⚠️ Attempted to send error response but headers already sent:', {
+            message,
+            statusCode,
+            path: res.req?.path
+        });
+        return res;
+    }
+
     const response = {
         success: false,
         message,

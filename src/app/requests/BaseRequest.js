@@ -81,12 +81,14 @@ class BaseRequest {
                 // Format lỗi theo chuẩn Laravel
                 const errors = this.formatErrors(error);
                 
-                return errorResponse(
+                // Gửi error response và DỪNG lại, không gọi next()
+                errorResponse(
                     this.res,
                     'Dữ liệu không hợp lệ',
                     HTTP_STATUS.BAD_REQUEST,
                     errors
                 );
+                return false; // Trả về false để báo hiệu validation failed
             }
 
             // Gán dữ liệu đã được validate vào request
@@ -99,11 +101,13 @@ class BaseRequest {
 
         } catch (err) {
             console.error('Validation error:', err);
-            return errorResponse(
+            // Gửi error response và DỪNG lại, không gọi next()
+            errorResponse(
                 this.res,
                 'Lỗi khi xử lý validation',
                 HTTP_STATUS.INTERNAL_SERVER_ERROR
             );
+            return false; // Trả về false để báo hiệu validation failed
         }
     }
 
@@ -139,7 +143,14 @@ class BaseRequest {
     static handle() {
         return async (req, res, next) => {
             const instance = new this(req, res, next);
-            await instance.validate();
+            const result = await instance.validate();
+            
+            // Nếu validation failed (return false), không gọi next()
+            // Nếu validation success (return true), next() đã được gọi trong validate()
+            if (result === false) {
+                // Validation failed, response đã được gửi, không gọi next()
+                return;
+            }
         };
     }
 }

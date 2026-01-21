@@ -162,6 +162,15 @@ const createBusinessError = (errorKey, additionalData = {}) => {
  * Format business error response
  */
 const formatBusinessError = (res, errorKey, additionalData = {}) => {
+    // Kiểm tra xem response đã được gửi chưa để tránh gửi 2 lần
+    if (res.headersSent) {
+        console.warn('⚠️ Attempted to send business error response but headers already sent:', {
+            errorKey,
+            path: res.req?.path
+        });
+        return res;
+    }
+
     const error = createBusinessError(errorKey, additionalData);
     
     return res.status(error.statusCode).json({
