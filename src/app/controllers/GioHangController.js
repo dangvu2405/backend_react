@@ -217,7 +217,7 @@ class GioHangController {
             }
             // Sử dụng model GioHang với IdKhachHang
             const cart = await GioHang.findOne({ IdKhachHang: userId })
-                .populate('Items.IdSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh MaLoaiSanPham DungTichOptions DungTich')
+                .populate('Items.IdSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh MaLoaiSanPham DungTichOptions DungTich TrangThai')
                 .lean();
             
             if (!cart) {
@@ -225,7 +225,58 @@ class GioHangController {
                 return successResponse(res, { cart: { Items: [] } }, 'Đã lấy giỏ hàng', HTTP_STATUS.OK);
             }
             
-            return successResponse(res, { cart }, 'Đã lấy giỏ hàng', HTTP_STATUS.OK);
+            // ✅ Giá không cố định - cập nhật giá từ DB hiện tại
+            // Lọc bỏ sản phẩm đã bị xóa và cập nhật giá
+            const updatedItems = [];
+            let needsUpdate = false;
+            
+            for (const item of cart.Items) {
+                const product = item.IdSanPham;
+                
+                // Bỏ qua sản phẩm đã bị xóa hoặc không tồn tại
+                if (!product || (product.TrangThai && product.TrangThai === 'deleted')) {
+                    needsUpdate = true;
+                    continue;
+                }
+                
+                // Tính lại giá từ DB hiện tại
+                const selectionInput = item.SelectedDungTich;
+                const { option: resolvedVolume } = resolveProductVolumeSelection(product, selectionInput);
+                const { finalPrice } = computeVariantPrice(product, resolvedVolume);
+                
+                // Nếu giá thay đổi, cập nhật
+                if (item.Gia !== finalPrice || item.ThanhTien !== (finalPrice * item.SoLuong)) {
+                    item.Gia = finalPrice;
+                    item.ThanhTien = finalPrice * item.SoLuong;
+                    needsUpdate = true;
+                }
+                
+                updatedItems.push(item);
+            }
+            
+            // Nếu có thay đổi, lưu lại
+            if (needsUpdate) {
+                const cartDoc = await GioHang.findById(cart._id);
+                if (cartDoc) {
+                    cartDoc.Items = updatedItems.map(item => ({
+                        IdSanPham: item.IdSanPham._id || item.IdSanPham,
+                        TenSanPham: item.TenSanPham,
+                        Gia: item.Gia,
+                        SoLuong: item.SoLuong,
+                        ThanhTien: item.ThanhTien,
+                        SelectedDungTich: item.SelectedDungTich
+                    }));
+                    await cartDoc.save();
+                    
+                    // Populate lại để trả về
+                    const updatedCart = await GioHang.findById(cart._id)
+                        .populate('Items.IdSanPham', 'TenSanPham Gia KhuyenMai HinhAnhChinh MaLoaiSanPham DungTichOptions DungTich TrangThai')
+                        .lean();
+                    return successResponse(res, { cart: updatedCart }, 'Đã lấy giỏ hàng (đã cập nhật giá)', HTTP_STATUS.OK);
+                }
+            }
+            
+            return successResponse(res, { cart: { ...cart, Items: updatedItems } }, 'Đã lấy giỏ hàng', HTTP_STATUS.OK);
         }
         catch(error){
             if (process.env.NODE_ENV === 'development') {
@@ -271,34 +322,38 @@ class GioHangController {
                         return errorResponse(res, 'Sản phẩm trong giỏ hàng không hợp lệ', HTTP_STATUS.BAD_REQUEST);
                     }
 
-                    const product = await SanPham.findById(productId).select('TenSanPham Gia KhuyenMai DungTichOptions DungTich');
-                    if (product) {
-                        const gia = product.Gia || 0;
-                        const giamGia = product.KhuyenMai || 0;
-                        const selectionInput = item.selectedDungTich || item.selectedVolume || item.volume;
-                        const { option: resolvedVolume, options: volumeOptions, explicitRequest } = resolveProductVolumeSelection(product, selectionInput);
-
-                        if (volumeOptions.length && explicitRequest && !resolvedVolume) {
-                            return errorResponse(res, `Dung tích đã chọn cho sản phẩm ${product.TenSanPham} không hợp lệ`, HTTP_STATUS.BAD_REQUEST);
-                        }
-
-                        const finalGiaData = computeVariantPrice(
-                            { Gia: gia, KhuyenMai: giamGia },
-                            resolvedVolume
-                        );
-                        const finalGia = finalGiaData.finalPrice;
-                        
-                        const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
-
-                        mappedItems.push({
-                            IdSanPham: product._id,
-                            TenSanPham: product.TenSanPham || item.tenSP || 'Sản phẩm',
-                            Gia: finalGia,
-                            SoLuong: quantity,
-                            ThanhTien: finalGia * quantity,
-                            SelectedDungTich: formatSelectedVolumePayload(resolvedVolume)
-                        });
+                    // ✅ Luôn lấy giá hiện tại từ DB (không tin giá từ client)
+                    const product = await SanPham.findOne({ 
+                        _id: productId,
+                        TrangThai: { $ne: 'deleted' } // Không lấy sản phẩm đã xóa
+                    }).select('TenSanPham Gia KhuyenMai DungTichOptions DungTich TrangThai');
+                    
+                    if (!product) {
+                        // Bỏ qua sản phẩm không tồn tại hoặc đã xóa
+                        continue;
                     }
+                    
+                    const selectionInput = item.selectedDungTich || item.selectedVolume || item.volume;
+                    const { option: resolvedVolume, options: volumeOptions, explicitRequest } = resolveProductVolumeSelection(product, selectionInput);
+
+                    if (volumeOptions.length && explicitRequest && !resolvedVolume) {
+                        return errorResponse(res, `Dung tích đã chọn cho sản phẩm ${product.TenSanPham} không hợp lệ`, HTTP_STATUS.BAD_REQUEST);
+                    }
+
+                    // ✅ Tính giá từ DB hiện tại
+                    const finalGiaData = computeVariantPrice(product, resolvedVolume);
+                    const finalGia = finalGiaData.finalPrice;
+                        
+                    const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
+
+                    mappedItems.push({
+                        IdSanPham: product._id,
+                        TenSanPham: product.TenSanPham || item.tenSP || 'Sản phẩm',
+                        Gia: finalGia,
+                        SoLuong: quantity,
+                        ThanhTien: finalGia * quantity,
+                        SelectedDungTich: formatSelectedVolumePayload(resolvedVolume)
+                    });
                 } catch (err) {
                     if (process.env.NODE_ENV === 'development') {
                         console.error(`Error processing product ${item.id}:`, err.message);

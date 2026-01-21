@@ -35,6 +35,40 @@ class DanhGiaController {
     }
 
     /**
+     * Helper: Recalculate product rating bằng aggregation
+     */
+    async recalculateProductRating(productId) {
+        try {
+            const stats = await DanhGia.aggregate([
+                { $match: { IdSanPham: mongoose.Types.ObjectId.isValid(productId) ? new mongoose.Types.ObjectId(productId) : productId } },
+                {
+                    $group: {
+                        _id: null,
+                        averageRating: { $avg: '$SoSao' },
+                        totalReviews: { $sum: 1 },
+                        ratingDistribution: {
+                            $push: '$SoSao'
+                        }
+                    }
+                }
+            ]);
+
+            if (stats.length > 0) {
+                const ratingData = stats[0];
+                // TODO: Lưu rating trung bình vào SanPham model nếu có field Rating
+                // await SanPham.findByIdAndUpdate(productId, {
+                //     Rating: Math.round(ratingData.averageRating * 10) / 10,
+                //     TotalReviews: ratingData.totalReviews
+                // });
+            }
+        } catch (error) {
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Lỗi khi tính lại rating:', error);
+            }
+        }
+    }
+
+    /**
      * Tạo đánh giá mới
      * POST /api/reviews
      */
@@ -70,23 +104,48 @@ class DanhGiaController {
                 return errorResponse(res, MESSAGES.PRODUCT_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
             }
 
-            // ✅ Kiểm tra đã đánh giá chưa
+            // ✅ Kiểm tra user đã mua sản phẩm chưa (khuyến nghị)
+            const DonHang = require('../models/DonHang');
+            const hasPurchased = await DonHang.exists({
+                MaKhachHang: IdKhachHang,
+                'SanPham.MaSanPham': IdSanPham,
+                TrangThai: 'delivered' // Chỉ cho phép review khi đã nhận hàng
+            });
+            
+            // Nếu chưa mua, có thể cảnh báo nhưng vẫn cho phép review (optional)
+            // if (!hasPurchased) {
+            //     return errorResponse(res, 'Bạn cần mua và nhận hàng trước khi đánh giá', HTTP_STATUS.BAD_REQUEST);
+            // }
+
+            // ✅ Kiểm tra đã đánh giá chưa - nếu có thì update thay vì tạo mới
             const existingReview = await DanhGia.findOne({
                 IdSanPham,
                 IdKhachHang
             });
 
             if (existingReview) {
-                return errorResponse(res, 'Bạn đã đánh giá sản phẩm này rồi. Vui lòng cập nhật đánh giá hiện tại.', HTTP_STATUS.BAD_REQUEST);
+                // ✅ Update thay vì tạo mới (1 user / 1 sản phẩm = update)
+                existingReview.NoiDung = NoiDung.trim();
+                existingReview.SoSao = rating;
+                await existingReview.save({ runValidators: true });
+                await existingReview.populate('IdKhachHang', 'HoTen AvatarUrl');
+                
+                // ✅ Recalculate rating trung bình của sản phẩm
+                await this.recalculateProductRating(IdSanPham);
+                
+                return successResponse(res, existingReview, 'Đánh giá đã được cập nhật', HTTP_STATUS.OK);
             }
 
-            // ✅ Tạo đánh giá
+            // ✅ Tạo đánh giá mới
             const review = await DanhGia.create({
                 IdSanPham,
                 IdKhachHang,
                 NoiDung: NoiDung.trim(),
                 SoSao: rating
             });
+            
+            // ✅ Recalculate rating trung bình của sản phẩm
+            await this.recalculateProductRating(IdSanPham);
 
             await review.populate('IdKhachHang', 'HoTen AvatarUrl');
 
@@ -259,6 +318,9 @@ class DanhGiaController {
             // ✅ Save với runValidators
             await review.save({ runValidators: true });
             await review.populate('IdKhachHang', 'HoTen AvatarUrl Email');
+            
+            // ✅ Recalculate rating trung bình của sản phẩm
+            await this.recalculateProductRating(review.IdSanPham);
 
             return successResponse(res, review, 'Cập nhật đánh giá thành công');
         } catch (error) {
@@ -299,7 +361,11 @@ class DanhGiaController {
                 return errorResponse(res, 'Bạn không có quyền xóa đánh giá này', HTTP_STATUS.FORBIDDEN);
             }
 
+            const productId = review.IdSanPham;
             await review.deleteOne();
+            
+            // ✅ Recalculate rating trung bình của sản phẩm sau khi xóa
+            await this.recalculateProductRating(productId);
 
             return successResponse(res, null, 'Xóa đánh giá thành công');
         } catch (error) {

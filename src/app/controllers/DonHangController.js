@@ -882,65 +882,39 @@ class DonHangController {
                 });
             }
             
-            // ✅ Validate tổng tiền
-            // Frontend có thể đã tính voucher discount, nên nếu frontend total < calculatedTotal
-            // và chênh lệch hợp lý (< 20%), thì chấp nhận tổng tiền từ frontend
+            // ✅ Validate tổng tiền - Backend là nguồn sự thật duy nhất
+            // ❗ Không chấp nhận sai số % - chỉ chấp nhận sai số = 0
+            // Backend tính lại hoàn toàn: Subtotal + Discount (voucher) + Shipping + Tax
             const frontendTotal = parseFloat(TongTien || 0);
             const difference = Math.abs(calculatedTotal - frontendTotal);
-            const maxDiscountPercent = 0.2; // Cho phép giảm tối đa 20%
-            const maxDiscountAmount = calculatedTotal * maxDiscountPercent;
             
+            // ✅ Tính toán lại tổng tiền từ backend (bao gồm voucher nếu có)
             let finalTotal = calculatedTotal;
             
-            // Nếu frontend total nhỏ hơn (có thể do voucher hoặc làm tròn)
-            if (frontendTotal < calculatedTotal) {
-                // Kiểm tra xem chênh lệch có hợp lý không (do voucher hoặc làm tròn)
-                if (difference <= maxDiscountAmount) {
-                    // Chấp nhận tổng tiền từ frontend (đã tính voucher hoặc làm tròn)
-                    finalTotal = frontendTotal;
-                    if (process.env.NODE_ENV === 'development') {
-                        console.log('Using frontend total (with discount/rounding):', finalTotal);
-                        console.log('Difference:', difference, 'Max allowed:', maxDiscountAmount);
-                    }
-                } else {
-                    // Chênh lệch quá lớn, có thể có lỗi
-                    if (process.env.NODE_ENV === 'development') {
-                        console.log('=== TONG TIEN VALIDATION ERROR ===');
-                        console.log('Calculated total (backend):', calculatedTotal);
-                        console.log('Received total (frontend):', frontendTotal);
-                        console.log('Difference:', difference);
-                        console.log('Max allowed discount:', maxDiscountAmount);
-                        console.log('Has voucher:', !!Voucher, Voucher);
-                        console.log('===================================');
-                    }
-                    
+            // TODO: Xử lý voucher discount ở đây nếu có
+            // if (Voucher) {
+            //     const voucherDiscount = await validateAndCalculateVoucher(Voucher, calculatedTotal);
+            //     finalTotal = calculatedTotal - voucherDiscount;
+            // }
+            
+            // ✅ So sánh với frontend total - chỉ chấp nhận sai số = 0
+            if (difference > 0) {
+                if (process.env.NODE_ENV === 'development') {
+                    console.log('=== TONG TIEN VALIDATION ERROR ===');
+                    console.log('Backend là nguồn sự thật duy nhất - không chấp nhận sai số');
+                    console.log('Calculated total (backend):', calculatedTotal);
+                    console.log('Received total (frontend):', frontendTotal);
+                    console.log('Difference:', difference);
+                    console.log('Has voucher:', !!Voucher, Voucher);
+                    console.log('===================================');
+                }
+                
                 return errorResponse(
                     res,
-                        `Tổng tiền không khớp. Tính toán: ${calculatedTotal.toLocaleString('vi-VN')}, Nhận được: ${frontendTotal.toLocaleString('vi-VN')}`,
+                    `Tổng tiền không khớp. Tính toán backend: ${calculatedTotal.toLocaleString('vi-VN')}, Nhận được từ client: ${frontendTotal.toLocaleString('vi-VN')}. Backend là nguồn sự thật duy nhất.`,
                     HTTP_STATUS.BAD_REQUEST
                 );
             }
-            } else if (frontendTotal > calculatedTotal) {
-                // Frontend total lớn hơn - có thể có lỗi hoặc phí vận chuyển
-                // Cho phép sai số nhỏ do làm tròn (1000đ)
-                if (difference > 1000) {
-                    if (process.env.NODE_ENV === 'development') {
-                        console.log('=== TONG TIEN VALIDATION ERROR ===');
-                        console.log('Frontend total is higher than calculated');
-                        console.log('Calculated total (backend):', calculatedTotal);
-                        console.log('Received total (frontend):', frontendTotal);
-                        console.log('Difference:', difference);
-                        console.log('===================================');
-                    }
-                    
-                    return errorResponse(
-                        res,
-                        `Tổng tiền không khớp. Tính toán: ${calculatedTotal.toLocaleString('vi-VN')}, Nhận được: ${frontendTotal.toLocaleString('vi-VN')}`,
-                        HTTP_STATUS.BAD_REQUEST
-                    );
-                }
-            }
-            // Nếu frontendTotal === calculatedTotal hoặc chênh lệch <= 1000, giữ nguyên calculatedTotal
             
             // ✅ Xử lý địa chỉ
             const normalizedInfo = normalizeGuestInfo(ThongTinNhanHang);
@@ -1216,28 +1190,24 @@ class DonHangController {
                 });
             }
             
-            // ✅ Validate tổng tiền (giống checkout)
+            // ✅ Validate tổng tiền - Backend là nguồn sự thật duy nhất
+            // ❗ Không chấp nhận sai số % - chỉ chấp nhận sai số = 0
             const frontendTotal = parseFloat(TongTien || 0);
             const difference = Math.abs(calculatedTotal - frontendTotal);
-            const maxDiscountPercent = 0.2; // Cho phép giảm tối đa 20%
-            const maxDiscountAmount = calculatedTotal * maxDiscountPercent;
             
             let finalTotal = calculatedTotal;
             
-            if (frontendTotal < calculatedTotal) {
-                if (difference <= maxDiscountAmount) {
-                    finalTotal = frontendTotal;
-                } else {
+            // TODO: Xử lý voucher discount ở đây nếu có
+            // if (Voucher) {
+            //     const voucherDiscount = await validateAndCalculateVoucher(Voucher, calculatedTotal);
+            //     finalTotal = calculatedTotal - voucherDiscount;
+            // }
+            
+            // ✅ So sánh với frontend total - chỉ chấp nhận sai số = 0
+            if (difference > 0) {
                 return errorResponse(
                     res,
-                        `Tổng tiền không khớp. Tính toán: ${calculatedTotal.toLocaleString('vi-VN')}, Nhận được: ${frontendTotal.toLocaleString('vi-VN')}`,
-                        HTTP_STATUS.BAD_REQUEST
-                    );
-                }
-            } else if (frontendTotal > calculatedTotal && difference > 1000) {
-                return errorResponse(
-                    res,
-                    `Tổng tiền không khớp. Tính toán: ${calculatedTotal.toLocaleString('vi-VN')}, Nhận được: ${frontendTotal.toLocaleString('vi-VN')}`,
+                    `Tổng tiền không khớp. Tính toán backend: ${calculatedTotal.toLocaleString('vi-VN')}, Nhận được từ client: ${frontendTotal.toLocaleString('vi-VN')}. Backend là nguồn sự thật duy nhất.`,
                     HTTP_STATUS.BAD_REQUEST
                 );
             }

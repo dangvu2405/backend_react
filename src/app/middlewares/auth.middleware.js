@@ -6,6 +6,7 @@ const { HTTP_STATUS, MESSAGES } = require('../../constants');
 
 const authMiddleware = async (req, res, next) => {
     try {
+        // ✅ Danh sách các paths công khai (không cần token)
         const publicPaths = [
             '/auth/login',
             '/auth/register',
@@ -16,26 +17,34 @@ const authMiddleware = async (req, res, next) => {
             '/auth/google/callback',
             '/auth/google/exchange',
             '/auth/google/error',
+            '/api/health',
+            '/api/docs',  // Swagger UI
             '/api/supply-chain/lookup',
             '/payment/vnpay/return'
         ];
         
+        // ✅ Patterns cho các routes công khai (regex)
         const publicPathPatterns = [
-            /^\/uploads\/.*$/,
-            /^\/api\/products(?:\/[^\/]+)?$/,
-            /^\/api\/categories(?:\/[^\/]+)?$/,
-            /^\/api\/reviews\/product\/[^\/]+(?:\/stats)?$/,
-            /^\/api\/supply-chain\/products\/[^\/]+\/trace$/,
-            /^\/cart\/(add-to-cart|get-cart|update-cart|checkout)$/,
-            /^\/payment\/vnpay\/(create-payment-url|create-qr|return|ipn)$/,
-            /^\/payment\/(vnpay-callback|momo-callback)$/,
-            /^\/auth\/google\/.*\/callback$/  // Allow Google OAuth callback with any intermediate segments
+            /^\/uploads\/.*$/,  // Static files - /uploads/*
+            /^\/api\/docs/,  // Swagger UI và assets - /api/docs và /api/docs/*
+            /^\/api\/health$/,  // Health check endpoint
+            /^\/api\/products(?:\/[^\/]+)?$/,  // GET products (public) - /api/products và /api/products/:id
+            /^\/api\/categories(?:\/[^\/]+)?$/,  // GET categories (public) - /api/categories và /api/categories/:id
+            /^\/api\/reviews\/product\/[^\/]+(?:\/stats)?$/,  // GET product reviews và stats (public)
+            /^\/api\/supply-chain\/products\/[^\/]+\/trace$/,  // Supply chain trace
+            /^\/cart\/(add-to-cart|get-cart|update-cart|checkout)$/,  // Cart routes (optional auth via optionalAuthMiddleware)
+            /^\/payment\/vnpay\/(create-payment-url|create-qr|return|ipn)$/,  // VNPay routes
+            /^\/payment\/(vnpay-callback|momo-callback)$/,  // Payment callbacks
+            /^\/admin\/categories(?:\/[^\/]+)?$/,  // GET admin categories (public) - /admin/categories và /admin/categories/:id
+            /^\/auth\/google\/.*\/callback$/,  // Google OAuth callback with any segments
         ];
         
+        // Kiểm tra exact path match trước
         if (publicPaths.includes(req.path)) {
             return next();
         }
         
+        // Kiểm tra pattern match
         for (const pattern of publicPathPatterns) {
             if (pattern.test(req.path)) {
                 return next();

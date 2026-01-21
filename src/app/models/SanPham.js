@@ -101,6 +101,12 @@ const SanPhamSchema = new mongoose.Schema({
             },
             message: 'Không thể có quá 10 ảnh phụ'
         }
+    },
+    TrangThai: {
+        type: String,
+        enum: ['active', 'inactive', 'deleted'],
+        default: 'active',
+        index: true
     }
 }, {
     timestamps: true,
@@ -116,6 +122,7 @@ SanPhamSchema.index({ MaLoaiSanPham: 1 });
 SanPhamSchema.index({ Gia: 1 });
 SanPhamSchema.index({ DaBan: -1 });
 SanPhamSchema.index({ createdAt: -1 });
+SanPhamSchema.index({ TrangThai: 1 }); // Index cho soft delete queries
 
 // ============================================
 // VIRTUAL FIELDS

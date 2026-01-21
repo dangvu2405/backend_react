@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const SanPham = require('../models/SanPham');
 const LoaiSanPham = require('../models/LoaiSanPham');
-const { successResponse, errorResponse, paginatedResponse } = require('../../utils/response');
+const { successResponse, errorResponse, paginatedResponse, businessErrorResponse } = require('../../utils/response');
+const { transformProduct } = require('../../utils/output.transformer');
 const { HTTP_STATUS, MESSAGES, PAGINATION } = require('../../constants');
 
 const normalizeVolumeOptions = SanPham.normalizeVolumeOptions;
@@ -9,6 +10,7 @@ const normalizeVolumeOptions = SanPham.normalizeVolumeOptions;
 class SanPhamController {
     async createProduct(req, res) {
         try {
+            // Dữ liệu đã được validate bởi StoreProductRequest
             const { 
                 TenSanPham, 
                 MaLoaiSanPham, 
@@ -20,36 +22,9 @@ class SanPhamController {
                 HinhAnhPhu,
                 DungTich,
                 DungTichOptions
-            } = req.body;
+            } = req.validated;
             
-            // ✅ Kiểm tra các trường bắt buộc
-            if (!TenSanPham || !MaLoaiSanPham || Gia === undefined || SoLuong === undefined) {
-                return errorResponse(res, 'Thiếu thông tin bắt buộc: TenSanPham, MaLoaiSanPham, Gia, SoLuong', HTTP_STATUS.BAD_REQUEST);
-            }
-            
-            // ✅ Validate ObjectId
-            if (!mongoose.Types.ObjectId.isValid(MaLoaiSanPham)) {
-                return errorResponse(res, 'MaLoaiSanPham không hợp lệ', HTTP_STATUS.BAD_REQUEST);
-            }
-            
-            // ✅ Validate giá trị số
-            if (typeof Gia !== 'number' || Gia < 0) {
-                return errorResponse(res, 'Giá phải là số dương', HTTP_STATUS.BAD_REQUEST);
-            }
-            
-            if (typeof SoLuong !== 'number' || SoLuong < 0 || !Number.isInteger(SoLuong)) {
-                return errorResponse(res, 'Số lượng phải là số nguyên dương', HTTP_STATUS.BAD_REQUEST);
-            }
-            
-            if (KhuyenMai !== undefined && (typeof KhuyenMai !== 'number' || KhuyenMai < 0 || KhuyenMai > 100)) {
-                return errorResponse(res, 'Khuyến mãi phải là số từ 0-100', HTTP_STATUS.BAD_REQUEST);
-            }
-            
-            if (DungTich !== undefined && (typeof DungTich !== 'number' || DungTich < 0)) {
-                return errorResponse(res, 'Dung tích phải là số không âm (đơn vị ml)', HTTP_STATUS.BAD_REQUEST);
-            }
-            
-            // ✅ Kiểm tra loại sản phẩm tồn tại
+            // Kiểm tra loại sản phẩm tồn tại
             const category = await LoaiSanPham.findById(MaLoaiSanPham);
             if (!category) {
                 return errorResponse(res, 'Loại sản phẩm không tồn tại', HTTP_STATUS.BAD_REQUEST);
@@ -105,16 +80,19 @@ class SanPhamController {
                 return errorResponse(res, 'ID sản phẩm không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
             
-            const product = await SanPham.findById(id)
+            const product = await SanPham.findOne({ 
+                _id: id,
+                TrangThai: { $ne: 'deleted' } // Không lấy sản phẩm đã xóa
+            })
                 .populate('MaLoaiSanPham', 'TenLoaiSanPham')
                 .lean();
                 
             if (!product) {
-                return errorResponse(res, MESSAGES.PRODUCT_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
+                return businessErrorResponse(res, 'PRODUCT_NOT_FOUND');
             }
             
-            // ✅ Chuẩn hóa response format: dùng successResponse
-            return successResponse(res, product, 'Lấy sản phẩm thành công', HTTP_STATUS.OK);
+            // ✅ Chuẩn hóa response format: transform product để loại bỏ field nhạy cảm
+            return successResponse(res, product, 'Lấy sản phẩm thành công', HTTP_STATUS.OK, { transformType: 'product' });
         } catch (error) {
             if (process.env.NODE_ENV === 'development') {
                 console.error('Lỗi khi lấy sản phẩm: ', error);
@@ -173,6 +151,9 @@ class SanPhamController {
             
             const skip = (page - 1) * limit;
             
+            // ✅ Chỉ lấy sản phẩm active (không lấy deleted)
+            filter.TrangThai = { $ne: 'deleted' };
+            
             const [products, total] = await Promise.all([
                 SanPham.find(filter)
                     .populate('MaLoaiSanPham', 'TenLoaiSanPham')
@@ -183,7 +164,7 @@ class SanPhamController {
                 SanPham.countDocuments(filter)
             ]);
             
-            return paginatedResponse(res, products, page, limit, total);
+            return paginatedResponse(res, products, page, limit, total, { transformType: 'product' });
         } catch (error) {
             if (process.env.NODE_ENV === 'development') {
                 console.error('Lỗi khi lấy danh sách sản phẩm: ', error);
@@ -195,71 +176,33 @@ class SanPhamController {
         try {
             const { id } = req.params;
             
-            // ✅ Validate ID
+            // Validate ID
             if (!mongoose.Types.ObjectId.isValid(id)) {
                 return errorResponse(res, 'ID sản phẩm không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
             
-            // ✅ Kiểm tra sản phẩm tồn tại
-            const existingProduct = await SanPham.findById(id);
+            // Kiểm tra sản phẩm tồn tại và chưa bị xóa
+            const existingProduct = await SanPham.findOne({ 
+                _id: id,
+                TrangThai: { $ne: 'deleted' }
+            });
             if (!existingProduct) {
                 return errorResponse(res, MESSAGES.PRODUCT_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
             }
             
-            // ✅ Chỉ cho phép update các field được phép
-            const allowedFields = [
-                'TenSanPham', 
-                'MaLoaiSanPham', 
-                'Gia', 
-                'KhuyenMai', 
-                'MoTa', 
-                'SoLuong', 
-                'HinhAnhChinh', 
-                'HinhAnhPhu',
-                'DungTich',
-                'DungTichOptions'
-            ];
-            let hasUpdates = false;
+            // Dữ liệu đã được validate bởi UpdateProductRequest
+            const updateData = req.validated;
             
-            for (const field of allowedFields) {
-                if (req.body[field] !== undefined) {
-                    const value = req.body[field];
-                    // ✅ Validate từng field
-                    if (field === 'Gia' && (typeof value !== 'number' || value < 0)) {
-                        return errorResponse(res, 'Giá phải là số dương', HTTP_STATUS.BAD_REQUEST);
-                    }
-                    if (field === 'SoLuong' && (typeof value !== 'number' || value < 0 || !Number.isInteger(value))) {
-                        return errorResponse(res, 'Số lượng phải là số nguyên dương', HTTP_STATUS.BAD_REQUEST);
-                    }
-                    if (field === 'KhuyenMai' && (typeof value !== 'number' || value < 0 || value > 100)) {
-                        return errorResponse(res, 'Khuyến mãi phải là số từ 0-100', HTTP_STATUS.BAD_REQUEST);
-                    }
-                    if (field === 'MaLoaiSanPham' && !mongoose.Types.ObjectId.isValid(value)) {
-                        return errorResponse(res, 'MaLoaiSanPham không hợp lệ', HTTP_STATUS.BAD_REQUEST);
-                    }
-                    if (field === 'TenSanPham' && (!value || value.trim().length < 2)) {
-                        return errorResponse(res, 'Tên sản phẩm phải có ít nhất 2 ký tự', HTTP_STATUS.BAD_REQUEST);
-                    }
-                    if (field === 'DungTich' && (typeof value !== 'number' || value < 0)) {
-                        return errorResponse(res, 'Dung tích phải là số không âm (đơn vị ml)', HTTP_STATUS.BAD_REQUEST);
-                    }
-                    if (field === 'DungTichOptions') {
-                        const normalizedOptions = normalizeVolumeOptions(value, req.body.DungTich ?? existingProduct.DungTich);
-                        if (!normalizedOptions.length) {
-                            return errorResponse(res, 'Vui lòng cung cấp ít nhất một dung tích hợp lệ', HTTP_STATUS.BAD_REQUEST);
-                        }
-                        existingProduct.DungTichOptions = normalizedOptions;
-                        hasUpdates = true;
-                        continue;
-                    }
-                    
-                    existingProduct[field] = field === 'TenSanPham' ? value.trim() : value;
-                    hasUpdates = true;
+            // Cập nhật các field
+            for (const [field, value] of Object.entries(updateData)) {
+                if (field === 'TenSanPham') {
+                    existingProduct[field] = value.trim();
+                } else if (field === 'DungTichOptions') {
+                    const normalizedOptions = normalizeVolumeOptions(value, updateData.DungTich ?? existingProduct.DungTich);
+                    existingProduct.DungTichOptions = normalizedOptions;
+                } else {
+                    existingProduct[field] = value;
                 }
-            }
-            
-            if (!hasUpdates) {
-                return errorResponse(res, 'Không có dữ liệu để cập nhật', HTTP_STATUS.BAD_REQUEST);
             }
             
             const product = await existingProduct.save();
@@ -288,8 +231,11 @@ class SanPhamController {
                 return errorResponse(res, 'ID sản phẩm không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
             
-            // ✅ Kiểm tra sản phẩm tồn tại
-            const product = await SanPham.findById(id);
+            // ✅ Kiểm tra sản phẩm tồn tại và chưa bị xóa
+            const product = await SanPham.findOne({ 
+                _id: id,
+                TrangThai: { $ne: 'deleted' }
+            });
             if (!product) {
                 return errorResponse(res, MESSAGES.PRODUCT_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
             }
@@ -302,32 +248,45 @@ class SanPhamController {
             });
             
             if (ordersWithProduct.length > 0) {
-                return errorResponse(
-                    res,
-                    `Không thể xóa sản phẩm. Sản phẩm đang có trong ${ordersWithProduct.length} đơn hàng chưa hoàn thành.`,
-                    HTTP_STATUS.BAD_REQUEST
-                );
+                // ✅ Soft delete: Chỉ đánh dấu inactive thay vì deleted
+                product.TrangThai = 'inactive';
+                await product.save();
+                return businessErrorResponse(res, 'PRODUCT_IN_USE', { 
+                    details: `Sản phẩm đang có trong ${ordersWithProduct.length} đơn hàng chưa hoàn thành. Đã đánh dấu không hoạt động.` 
+                });
             }
             
-            // ✅ Xóa ảnh trên Cloudinary nếu có
+            // ✅ Hard delete chỉ khi chưa từng phát sinh đơn hàng
+            // Kiểm tra xem có đơn hàng nào từng có sản phẩm này không
+            const hasAnyOrder = await DonHang.exists({
+                'SanPham.MaSanPham': id
+            });
+            
+            if (hasAnyOrder) {
+                // ✅ Soft delete: Đánh dấu deleted
+                product.TrangThai = 'deleted';
+                await product.save();
+                return successResponse(res, { id }, 'Sản phẩm đã được đánh dấu xóa (soft delete)', HTTP_STATUS.OK);
+            }
+            
+            // ✅ Hard delete chỉ khi chưa từng phát sinh đơn hàng
+            // Xóa ảnh trên Cloudinary nếu có
             if (product.HinhAnhChinh) {
                 try {
                     const cloudinary = require('cloudinary').v2;
-                    // Extract public_id từ URL nếu có
                     const publicId = product.HinhAnhChinh.split('/').pop().split('.')[0];
                     await cloudinary.uploader.destroy(`product_images/${publicId}`);
                 } catch (cloudinaryError) {
                     if (process.env.NODE_ENV === 'development') {
                         console.error('Lỗi khi xóa ảnh trên Cloudinary:', cloudinaryError);
                     }
-                    // Không fail nếu xóa ảnh lỗi, vẫn tiếp tục xóa sản phẩm
                 }
             }
             
-            // ✅ Xóa sản phẩm
+            // ✅ Hard delete
             await product.deleteOne();
             
-            return successResponse(res, { id }, 'Sản phẩm đã được xóa', HTTP_STATUS.OK);
+            return successResponse(res, { id }, 'Sản phẩm đã được xóa hoàn toàn (hard delete)', HTTP_STATUS.OK);
         } catch (error) {
             if (process.env.NODE_ENV === 'development') {
                 console.error('Lỗi khi xóa sản phẩm: ', error);

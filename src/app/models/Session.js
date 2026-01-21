@@ -11,12 +11,17 @@ const SessionSchema = new Schema({
     refreshToken: {
         type: String,
         required: true,
-        unique: true
+        unique: true,
+        index: true
     },
     expiresAt: {
         type: Date,
         required: true,
-        
+        index: true
+    },
+    revokedAt: {
+        type: Date,
+        default: null
     }
 }, { timestamps: true });
 

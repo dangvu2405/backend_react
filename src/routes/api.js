@@ -9,7 +9,30 @@ cloudinary.config({
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
-// Health check endpoint for Render
+/**
+ * @swagger
+ * /api/health:
+ *   get:
+ *     summary: Kiểm tra trạng thái API
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: API đang hoạt động
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: API is healthy
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
 router.get('/health', (req, res) => {
     res.status(200).json({
         success: true,
@@ -18,8 +41,62 @@ router.get('/health', (req, res) => {
     });
 });
 
+/**
+ * @swagger
+ * /api/products:
+ *   get:
+ *     summary: Lấy danh sách tất cả sản phẩm
+ *     tags: [Products]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Số trang
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Số lượng sản phẩm mỗi trang
+ *     responses:
+ *       200:
+ *         description: Danh sách sản phẩm
+ */
 router.get('/products', SanPhamController.getAllProducts);
+
+/**
+ * @swagger
+ * /api/categories:
+ *   get:
+ *     summary: Lấy danh sách tất cả danh mục
+ *     tags: [Categories]
+ *     responses:
+ *       200:
+ *         description: Danh sách danh mục
+ */
 router.get('/categories', LoaiSanPhamController.getAllCategories);
+
+/**
+ * @swagger
+ * /api/products/{id}:
+ *   get:
+ *     summary: Lấy thông tin chi tiết sản phẩm
+ *     tags: [Products]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của sản phẩm
+ *     responses:
+ *       200:
+ *         description: Thông tin sản phẩm
+ *       404:
+ *         description: Không tìm thấy sản phẩm
+ */
 router.get('/products/:id', SanPhamController.getProduct);
 router.post('/upload', uploadLimiter, async (req, res) => {
     try {

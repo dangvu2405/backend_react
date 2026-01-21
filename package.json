@@ -6,8 +6,11 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "jest",
-    "test:watch": "jest --watch"
+    "test": "jest --passWithNoTests",
+    "test:watch": "jest --watch --passWithNoTests",
+    "test:coverage": "jest --coverage --passWithNoTests",
+    "test:requests": "jest src/__tests__/requests --verbose",
+    "test:requests:watch": "jest src/__tests__/requests --watch --verbose"
   },
   "keywords": [
     "api",
@@ -48,16 +51,19 @@
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "vnpay": "^2.4.4",
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
     "@babel/core": "^7.28.5",
     "@babel/preset-env": "^7.28.5",
+    "@testing-library/jest-dom": "^6.9.1",
     "babel-jest": "^30.2.0",
     "dotenv": "^17.2.3",
     "jest": "^30.2.0",
     "nodemon": "^3.1.10",
-    "supertest": "^7.1.4"
+    "supertest": "^7.2.2"
   }
 }

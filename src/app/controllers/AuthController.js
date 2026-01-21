@@ -6,7 +6,8 @@ const crypto = require('crypto');
 const { sendPasswordResetEmail, sendWelcomeEmail, sendEmail } = require('../../utils/email');
 const { hashPassword, comparePassword } = require('../../utils/password');
 const { generateTokenPair, generateToken } = require('../../utils/token');
-const { successResponse, errorResponse } = require('../../utils/response');
+const { successResponse, errorResponse, businessErrorResponse } = require('../../utils/response');
+const { transformUser } = require('../../utils/output.transformer');
 const { HTTP_STATUS, MESSAGES, JWT } = require('../../constants');
 
 const getFrontendUrl = () => {
@@ -17,21 +18,24 @@ const getFrontendUrl = () => {
 class AuthController {
     async login(req, res) {
         try {
-            const { username, password } = req.body;
-            if (!username || !password) {
-                return errorResponse(res, MESSAGES.ERROR, HTTP_STATUS.BAD_REQUEST);
-            }
+            // Dữ liệu đã được validate bởi LoginRequest
+            const { username, password } = req.validated;
             
             const user = await TaiKhoan.findOne({
                 $or: [{ Email: username.toLowerCase() }, { TenDangNhap: username }]
             });
             if (!user) {
-                return errorResponse(res, MESSAGES.INVALID_CREDENTIALS, HTTP_STATUS.UNAUTHORIZED);
+                return businessErrorResponse(res, 'INVALID_CREDENTIALS');
             }
             
             const isMatch = await comparePassword(password, user.MatKhau);
             if (!isMatch) {
-                return errorResponse(res, MESSAGES.INVALID_CREDENTIALS, HTTP_STATUS.UNAUTHORIZED);
+                return businessErrorResponse(res, 'INVALID_CREDENTIALS');
+            }
+            
+            // Kiểm tra trạng thái tài khoản
+            if (user.TrangThai !== 'active') {
+                return businessErrorResponse(res, 'ACCOUNT_LOCKED');
             }
             
             const tokens = generateTokenPair(user);
@@ -49,17 +53,11 @@ class AuthController {
                 maxAge: 7 * 24 * 60 * 60 * 1000 
             });
             
-            // ✅ Chuẩn hóa response format: chỉ trả accessToken trong data
+            // ✅ Chuẩn hóa response format: transform user để loại bỏ field nhạy cảm
             return successResponse(res, {
                 accessToken: tokens.accessToken,
-                user: {
-                    id: user._id,
-                    TenDangNhap: user.TenDangNhap,
-                    HoTen: user.HoTen,
-                    Email: user.Email,
-                    MaVaiTro: user.MaVaiTro
-                }
-            }, 'Đăng nhập thành công', HTTP_STATUS.OK);
+                user: transformUser(user)
+            }, 'Đăng nhập thành công', HTTP_STATUS.OK, { skipTransform: true });
         } catch (error) {
             if (process.env.NODE_ENV === 'development') {
                 console.error('Lỗi khi đăng nhập: ', error);
@@ -69,33 +67,8 @@ class AuthController {
     }
     async register(req, res) {
         try {
-            const { hoten, username, email, password, sdt } = req.body;
-            if (!hoten || !username || !email || !password || !sdt) {
-                return errorResponse(res, 'Vui lòng nhập đầy đủ thông tin', HTTP_STATUS.BAD_REQUEST);
-            }
-            
-            // ✅ Validate email format
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(email)) {
-                return errorResponse(res, 'Email không hợp lệ', HTTP_STATUS.BAD_REQUEST);
-            }
-            
-            // ✅ Validate password strength (ít nhất 6 ký tự)
-            if (password.length < 6) {
-                return errorResponse(res, 'Mật khẩu phải có ít nhất 6 ký tự', HTTP_STATUS.BAD_REQUEST);
-            }
-            
-            // ✅ Validate username (ít nhất 3 ký tự, không có ký tự đặc biệt)
-            if (username.length < 3 || !/^[a-zA-Z0-9_]+$/.test(username)) {
-                return errorResponse(res, 'Tên đăng nhập phải có ít nhất 3 ký tự và chỉ chứa chữ cái, số, dấu gạch dưới', HTTP_STATUS.BAD_REQUEST);
-            }
-            
-            const user = await TaiKhoan.findOne({ 
-                $or: [{ Email: email.toLowerCase() }, { TenDangNhap: username }] 
-            });
-            if (user) {
-                return errorResponse(res, MESSAGES.USER_EXISTS, HTTP_STATUS.BAD_REQUEST);
-            }
+            // Dữ liệu đã được validate bởi RegisterRequest (bao gồm cả unique check)
+            const { hoten, username, email, password, sdt } = req.validated;
             
             const customerRole = await Role.getCustomerRole();
             if (!customerRole) {
@@ -136,16 +109,11 @@ class AuthController {
                 maxAge: 7 * 24 * 60 * 60 * 1000 
             });
             
-            // ✅ Chuẩn hóa response format: chỉ trả accessToken trong data
+            // ✅ Chuẩn hóa response format: transform user để loại bỏ field nhạy cảm
             return successResponse(res, {
                 accessToken: tokens.accessToken,
-                user: {
-                    id: newUser._id,
-                    TenDangNhap: newUser.TenDangNhap,
-                    HoTen: newUser.HoTen,
-                    Email: newUser.Email
-                }
-            }, 'Tạo tài khoản thành công', HTTP_STATUS.CREATED);
+                user: transformUser(newUser)
+            }, 'Tạo tài khoản thành công', HTTP_STATUS.CREATED, { skipTransform: true });
         } catch (error) {
             if (process.env.NODE_ENV === 'development') {
                 console.error('Lỗi khi tạo tài khoản: ', error);
@@ -195,24 +163,54 @@ class AuthController {
                 return errorResponse(res, 'Không tìm thấy refresh token', HTTP_STATUS.UNAUTHORIZED);
             }
             
-            const session = await Session.findOne({ refreshToken }).populate('userId');
+            // ✅ Tìm session và kiểm tra chưa bị revoke
+            const session = await Session.findOne({ 
+                refreshToken,
+                revokedAt: null // Chưa bị revoke
+            }).populate('userId');
+            
             if (!session) {
-                return errorResponse(res, 'Không tìm thấy session', HTTP_STATUS.UNAUTHORIZED);
+                return businessErrorResponse(res, 'TOKEN_INVALID');
             }
+            
             if (session.expiresAt < Date.now()) {
-                return errorResponse(res, 'Refresh token đã hết hạn', HTTP_STATUS.UNAUTHORIZED);
+                // Đánh dấu session đã hết hạn
+                await Session.findByIdAndUpdate(session._id, { revokedAt: new Date() });
+                return businessErrorResponse(res, 'TOKEN_EXPIRED');
             }
             
             const user = await TaiKhoan.findById(session.userId);
             if (!user) {
-                return errorResponse(res, MESSAGES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
+                return businessErrorResponse(res, 'RESOURCE_NOT_FOUND', { details: 'User không tồn tại' });
             }
             
+            if (user.TrangThai !== 'active') {
+                return businessErrorResponse(res, 'ACCOUNT_LOCKED');
+            }
+            
+            // ✅ Revoke session cũ (one-time use)
+            await Session.findByIdAndUpdate(session._id, { revokedAt: new Date() });
+            
+            // ✅ Tạo token mới và session mới (rotation)
             const tokens = generateTokenPair(user);
+            const newRefreshToken = crypto.randomBytes(32).toString('hex');
+            const newSession = await Session.create({
+                userId: user._id,
+                refreshToken: newRefreshToken,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 ngày
+            });
+            
+            // ✅ Set cookie mới
+            res.cookie('refreshToken', newRefreshToken, {
+                httpOnly: true, 
+                secure: process.env.NODE_ENV === 'production', 
+                maxAge: 7 * 24 * 60 * 60 * 1000 
+            });
+            
             // ✅ Chuẩn hóa response format: chỉ trả accessToken trong data
             return successResponse(res, {
                 accessToken: tokens.accessToken
-            }, 'Token đã được làm mới', HTTP_STATUS.OK);
+            }, 'Token đã được làm mới', HTTP_STATUS.OK, { skipTransform: true });
         }
         catch (error) {
             if (process.env.NODE_ENV === 'development') {
