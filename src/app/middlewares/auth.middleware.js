@@ -8,6 +8,7 @@ const authMiddleware = async (req, res, next) => {
     try {
         // ✅ Danh sách các paths công khai (không cần token)
         const publicPaths = [
+            '/',
             '/auth/login',
             '/auth/register',
             '/auth/refresh-token',
@@ -54,9 +55,25 @@ const authMiddleware = async (req, res, next) => {
             /^\/api\/products(?:\/[^\/]+)?$/,  // GET products - /api/products và /api/products/:id
             /^\/api\/categories(?:\/[^\/]+)?$/,  // GET categories - /api/categories và /api/categories/:id
             
-            // Projects (DoAn)
+            // Projects (DoAn) - Đồ án
             /^\/api\/projects(?:\/[^\/]+)?$/,  // GET projects - /api/projects và /api/projects/:id
             /^\/api\/project-categories(?:\/[^\/]+)?$/,  // GET project categories
+            /^\/api\/projects\/.*$/,  // Tất cả routes đồ án (detail, search, filter, etc.)
+            
+            // Documents (Tài liệu)
+            /^\/api\/documents(?:\/[^\/]+)?$/,  // GET documents - /api/documents và /api/documents/:id
+            /^\/api\/documents\/.*$/,  // Tất cả routes tài liệu
+            /^\/api\/files(?:\/[^\/]+)?$/,  // GET files - /api/files và /api/files/:id
+            /^\/api\/files\/.*$/,  // Tất cả routes files
+            /^\/api\/downloads\/.*$/,  // Download files (nếu có)
+            
+            // Academic Support (Hỗ trợ môn học)
+            /^\/api\/support(?:\/[^\/]+)?$/,  // GET support - /api/support và /api/support/:id
+            /^\/api\/support\/.*$/,  // Tất cả routes hỗ trợ
+            /^\/api\/academic-support(?:\/[^\/]+)?$/,  // GET academic support
+            /^\/api\/academic-support\/.*$/,  // Tất cả routes academic support
+            /^\/api\/subjects(?:\/[^\/]+)?$/,  // GET subjects (môn học)
+            /^\/api\/subjects\/.*$/,  // Tất cả routes subjects
             
             // MMO Shop
             /^\/api\/mmo-shop\/products(?:\/[^\/]+)?$/,  // GET MMO products - /api/mmo-shop/products và /api/mmo-shop/products/:id

@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const GioHang = require('../models/GioHang');
-const SanPham = require('../models/SanPham');
+// SanPham model đã bị xóa - sử dụng DoAn và MMOProduct thay thế
+const DoAn = require('../models/DoAn');
+const MMOProduct = require('../models/MMOProduct');
 const { successResponse, errorResponse } = require('../../utils/response');
 const { HTTP_STATUS, MESSAGES } = require('../../constants');
 

@@ -6,9 +6,9 @@
 const RegisterRequest = require('./Auth/RegisterRequest');
 const LoginRequest = require('./Auth/LoginRequest');
 
-// Product Requests
-const StoreProductRequest = require('./Product/StoreProductRequest');
-const UpdateProductRequest = require('./Product/UpdateProductRequest');
+// Product Requests - Đã xóa (không còn sử dụng SanPham)
+// const StoreProductRequest = require('./Product/StoreProductRequest');
+// const UpdateProductRequest = require('./Product/UpdateProductRequest');
 
 // Order Requests
 const CheckoutRequest = require('./Order/CheckoutRequest');
@@ -27,9 +27,9 @@ module.exports = {
     RegisterRequest,
     LoginRequest,
     
-    // Product
-    StoreProductRequest,
-    UpdateProductRequest,
+    // Product - Đã xóa (không còn sử dụng SanPham)
+    // StoreProductRequest,
+    // UpdateProductRequest,
     
     // Order
     CheckoutRequest,

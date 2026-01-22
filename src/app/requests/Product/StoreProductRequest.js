@@ -1,6 +1,6 @@
 const Joi = require('joi');
 const BaseRequest = require('../BaseRequest');
-const SanPham = require('../../models/SanPham');
+// SanPham model đã bị xóa - không còn sử dụng
 
 /**
  * StoreProductRequest - Validation cho tạo sản phẩm mới

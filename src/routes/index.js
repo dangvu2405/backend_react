@@ -9,10 +9,14 @@ const paymentRouter = require('./payment.routes.js');
 const chatRouter = require('./chat.js');
 const walletRouter = require('./wallet.js');
 const mmoShopRouter = require('./mmo-shop.js');
+const projectsRouter = require('./projects.js');
+const projectCategoriesRouter = require('./project-categories.js');
 
 function router(app) {
     app.use('/auth', authRouter);   
     app.use('/api', apiRouter);
+    app.use('/api/projects', projectsRouter);
+    app.use('/api/project-categories', projectCategoriesRouter);
     app.use('/user', userRouter);
     app.use('/cart', cartRouter);
     app.use('/admin', adminRouter);
@@ -20,6 +24,7 @@ function router(app) {
     app.use('/payment', paymentRouter);
     app.use('/chat', chatRouter);
     app.use('/api/wallet', walletRouter);
+    app.use('/wallet', walletRouter); // Support frontend calls without /api prefix
     app.use('/api/mmo-shop', mmoShopRouter);
 }
 

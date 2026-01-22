@@ -1,8 +1,10 @@
 const DanhGia = require('../models/DanhGia');
-const SanPham = require('../models/SanPham');
+// SanPham model đã bị xóa - sử dụng DoAn và MMOProduct thay thế
+const DoAn = require('../models/DoAn');
+const MMOProduct = require('../models/MMOProduct');
 const mongoose = require('mongoose');
 const { HTTP_STATUS, MESSAGES } = require('../../constants');
-const { successResponse, errorResponse } = require('../../utils/response');
+const { successResponse, errorResponse, paginatedResponse } = require('../../utils/response');
 
 class DanhGiaController {
     /**
@@ -98,10 +100,15 @@ class DanhGiaController {
                 return errorResponse(res, 'ID sản phẩm không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
 
-            // ✅ Kiểm tra sản phẩm tồn tại
-            const product = await SanPham.findById(IdSanPham);
+            // ✅ Kiểm tra sản phẩm tồn tại (MMOProduct hoặc DoAn)
+            // SanPham model đã bị xóa - sử dụng MMOProduct thay thế
+            const product = await MMOProduct.findById(IdSanPham);
             if (!product) {
-                return errorResponse(res, MESSAGES.PRODUCT_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
+                // Nếu không tìm thấy trong MMOProduct, thử tìm trong DoAn
+                const doAn = await DoAn.findById(IdSanPham);
+                if (!doAn) {
+                    return errorResponse(res, MESSAGES.PRODUCT_NOT_FOUND || 'Sản phẩm không tồn tại', HTTP_STATUS.NOT_FOUND);
+                }
             }
 
             // ✅ Kiểm tra user đã mua sản phẩm chưa (khuyến nghị)
@@ -218,6 +225,65 @@ class DanhGiaController {
             return successResponse(res, stats, 'Lấy thống kê đánh giá thành công');
         } catch (error) {
             return errorResponse(res, 'Lỗi khi lấy thống kê đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Lấy thống kê rating của đồ án
+     * GET /api/reviews/project/:projectId/stats
+     */
+    async getProjectRatingStats(req, res) {
+        try {
+            const { projectId } = req.params;
+
+            if (!mongoose.Types.ObjectId.isValid(projectId)) {
+                return errorResponse(res, 'ID đồ án không hợp lệ', HTTP_STATUS.BAD_REQUEST);
+            }
+
+            const stats = await DanhGia.getProjectRatingStats(projectId);
+
+            return successResponse(res, stats, 'Lấy thống kê đánh giá thành công');
+        } catch (error) {
+            return errorResponse(res, 'Lỗi khi lấy thống kê đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Lấy danh sách đánh giá của đồ án
+     * GET /api/reviews/project/:projectId
+     */
+    async getProjectReviews(req, res) {
+        try {
+            const { projectId } = req.params;
+            const { page = 1, limit = 10 } = req.query;
+
+            if (!mongoose.Types.ObjectId.isValid(projectId)) {
+                return errorResponse(res, 'ID đồ án không hợp lệ', HTTP_STATUS.BAD_REQUEST);
+            }
+
+            const pageNum = Math.max(1, parseInt(page));
+            const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+            const skip = (pageNum - 1) * limitNum;
+
+            const [reviews, total] = await Promise.all([
+                DanhGia.find({ IdDoAn: projectId })
+                    .populate('IdKhachHang', 'HoTen AvatarUrl Email')
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(limitNum)
+                    .lean(),
+                DanhGia.countDocuments({ IdDoAn: projectId })
+            ]);
+
+            return paginatedResponse(
+                res,
+                reviews,
+                pageNum,
+                limitNum,
+                total
+            );
+        } catch (error) {
+            return errorResponse(res, 'Lỗi khi lấy danh sách đánh giá: ' + error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
     }
 

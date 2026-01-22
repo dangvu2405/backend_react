@@ -76,6 +76,21 @@ router.get('/', WalletController.getBalance);
 
 /**
  * @swagger
+ * /api/wallet/me:
+ *   get:
+ *     summary: Lấy số dư ví của user hiện tại (alias cho /api/wallet)
+ *     tags: [Wallet]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.get('/me', WalletController.getBalance);
+
+/**
+ * @swagger
  * /api/wallet/deposit:
  *   post:
  *     summary: Nạp tiền vào ví

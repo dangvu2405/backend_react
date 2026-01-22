@@ -81,13 +81,9 @@ class MMOShopController {
             return paginatedResponse(
                 res,
                 formattedProducts,
-                {
-                    currentPage: pageNum,
-                    pageSize: limitNum,
-                    totalPages,
-                    totalItems: total
-                },
-                'Lấy danh sách sản phẩm thành công'
+                pageNum,
+                limitNum,
+                total
             );
         } catch (error) {
             console.error('Lỗi khi lấy danh sách sản phẩm MMO:', error);

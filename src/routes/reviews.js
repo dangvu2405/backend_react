@@ -26,6 +26,52 @@ const { reviewLimiter } = require('../app/middlewares/rateLimit.middleware');
  */
 router.get('/product/:productId/stats', DanhGiaController.getProductRatingStats);
 
+/**
+ * @swagger
+ * /api/reviews/project/{projectId}/stats:
+ *   get:
+ *     summary: Lấy thống kê đánh giá của đồ án
+ *     tags: [Reviews]
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Thống kê đánh giá
+ */
+router.get('/project/:projectId/stats', DanhGiaController.getProjectRatingStats);
+
+/**
+ * @swagger
+ * /api/reviews/project/{projectId}:
+ *   get:
+ *     summary: Lấy danh sách đánh giá của đồ án
+ *     tags: [Reviews]
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *     responses:
+ *       200:
+ *         description: Danh sách đánh giá
+ */
+router.get('/project/:projectId', DanhGiaController.getProjectReviews);
+
 // ============================================
 // PROTECTED ROUTES (cần đăng nhập)
 // ============================================

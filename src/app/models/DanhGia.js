@@ -8,8 +8,18 @@ const mongoose = require('mongoose');
 const DanhGiaSchema = new mongoose.Schema({
     IdSanPham: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'SanPham',
-        required: [true, 'ID sản phẩm là bắt buộc']
+        ref: 'SanPham', // Legacy - có thể dùng cho MMOProduct
+        required: false
+    },
+    IdDoAn: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'DoAn',
+        required: false
+    },
+    LoaiSanPham: {
+        type: String,
+        enum: ['SanPham', 'DoAn', 'MMOProduct'],
+        default: 'SanPham'
     },
     IdKhachHang: {
         type: mongoose.Schema.Types.ObjectId,
@@ -38,13 +48,27 @@ const DanhGiaSchema = new mongoose.Schema({
     collection: 'DanhGia'
 });
 
+// Validation: Phải có ít nhất một trong hai (IdSanPham hoặc IdDoAn)
+DanhGiaSchema.pre('validate', function(next) {
+    if (!this.IdSanPham && !this.IdDoAn) {
+        this.invalidate('IdSanPham', 'Phải có IdSanPham hoặc IdDoAn');
+        this.invalidate('IdDoAn', 'Phải có IdSanPham hoặc IdDoAn');
+    }
+    next();
+});
+
 // ============================================
 // INDEXES
 // ============================================
 
 DanhGiaSchema.index({ IdSanPham: 1 });
+DanhGiaSchema.index({ IdDoAn: 1 });
 DanhGiaSchema.index({ IdKhachHang: 1 });
+DanhGiaSchema.index({ LoaiSanPham: 1 });
 DanhGiaSchema.index({ createdAt: -1 });
+
+// Compound index để query nhanh hơn
+DanhGiaSchema.index({ IdDoAn: 1, IdKhachHang: 1 });
 
 // ============================================
 // VIRTUAL FIELDS
@@ -94,11 +118,46 @@ DanhGiaSchema.statics.countByProduct = function(productId) {
 };
 
 /**
- * Tính điểm trung bình và phân bố sao
+ * Tính điểm trung bình và phân bố sao cho sản phẩm
  */
 DanhGiaSchema.statics.getProductRatingStats = async function(productId) {
     const stats = await this.aggregate([
         { $match: { IdSanPham: new mongoose.Types.ObjectId(productId) } },
+        {
+            $group: {
+                _id: null,
+                avgRating: { $avg: '$SoSao' },
+                totalReviews: { $sum: 1 },
+                star5: { $sum: { $cond: [{ $eq: ['$SoSao', 5] }, 1, 0] } },
+                star4: { $sum: { $cond: [{ $eq: ['$SoSao', 4] }, 1, 0] } },
+                star3: { $sum: { $cond: [{ $eq: ['$SoSao', 3] }, 1, 0] } },
+                star2: { $sum: { $cond: [{ $eq: ['$SoSao', 2] }, 1, 0] } },
+                star1: { $sum: { $cond: [{ $eq: ['$SoSao', 1] }, 1, 0] } }
+            }
+        }
+    ]);
+
+    if (stats.length === 0) {
+        return {
+            avgRating: 0,
+            totalReviews: 0,
+            star5: 0,
+            star4: 0,
+            star3: 0,
+            star2: 0,
+            star1: 0
+        };
+    }
+
+    return stats[0];
+};
+
+/**
+ * Tính điểm trung bình và phân bố sao cho đồ án
+ */
+DanhGiaSchema.statics.getProjectRatingStats = async function(projectId) {
+    const stats = await this.aggregate([
+        { $match: { IdDoAn: new mongoose.Types.ObjectId(projectId) } },
         {
             $group: {
                 _id: null,
