@@ -71,7 +71,7 @@ const VoucherSchema = new mongoose.Schema({
 // INDEXES
 // ============================================
 
-VoucherSchema.index({ MaVoucher: 1 });
+// MaVoucher đã có unique: true nên tự động có index, không cần thêm
 
 // ============================================
 // STATIC METHODS

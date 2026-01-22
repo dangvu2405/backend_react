@@ -14,6 +14,7 @@ const LoaiDoAnSchema = new mongoose.Schema({
         trim: true,
         minlength: [2, 'Tên loại đồ án phải có ít nhất 2 ký tự'],
         maxlength: [100, 'Tên loại đồ án không được quá 100 ký tự']
+        // unique: true tự động tạo index, không cần thêm index: true
     },
     MoTa: {
         type: String,
@@ -54,7 +55,7 @@ const LoaiDoAnSchema = new mongoose.Schema({
 // INDEXES
 // ============================================
 
-LoaiDoAnSchema.index({ TenLoaiDoAn: 1 });
+// TenLoaiDoAn đã có unique: true nên tự động có index, không cần thêm
 LoaiDoAnSchema.index({ Loai: 1 });
 LoaiDoAnSchema.index({ MaLoaiCha: 1 });
 LoaiDoAnSchema.index({ TrangThai: 1 });

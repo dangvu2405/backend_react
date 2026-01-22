@@ -28,17 +28,55 @@ const authMiddleware = async (req, res, next) => {
             return next();
         }
         
+        // ✅ Exclude patterns - các routes này KHÔNG được public (cần auth)
+        // Kiểm tra exclude patterns TRƯỚC public patterns
+        const excludePatterns = [
+            /^\/api\/reviews\/product\/[^\/]+\/my-review$/,  // Reviews của user - cần auth
+            /^\/api\/reviews\/my-reviews$/,  // My reviews - cần auth
+            /^\/api\/wallet\/pay$/,  // Wallet pay - cần auth
+            /^\/admin\/.*$/,  // Tất cả admin routes - cần auth + admin role (trừ /admin/categories đã được handle ở publicGetOnlyPaths)
+            /^\/user\/.*$/,  // Tất cả user routes - cần auth
+            /^\/chat\/.*$/,  // Chat routes - cần auth
+        ];
+        
+        // Nếu match exclude pattern, không cho phép public (cần auth)
+        let isExcluded = false;
+        for (const pattern of excludePatterns) {
+            if (pattern.test(req.path)) {
+                isExcluded = true;
+                break;
+            }
+        }
+        
         // ✅ Routes công khai chỉ cho GET requests (xem dữ liệu)
         const publicGetOnlyPaths = [
+            // Products & Categories
             /^\/api\/products(?:\/[^\/]+)?$/,  // GET products - /api/products và /api/products/:id
             /^\/api\/categories(?:\/[^\/]+)?$/,  // GET categories - /api/categories và /api/categories/:id
-            /^\/api\/reviews\/product\/[^\/]+(?:\/stats)?$/,  // GET product reviews stats
-            /^\/api\/reviews\/product\/[^\/]+$/,  // GET product reviews list
+            
+            // Projects (DoAn)
+            /^\/api\/projects(?:\/[^\/]+)?$/,  // GET projects - /api/projects và /api/projects/:id
+            /^\/api\/project-categories(?:\/[^\/]+)?$/,  // GET project categories
+            
+            // MMO Shop
+            /^\/api\/mmo-shop\/products(?:\/[^\/]+)?$/,  // GET MMO products - /api/mmo-shop/products và /api/mmo-shop/products/:id
+            /^\/api\/mmo-shop\/games$/,  // GET MMO games
+            /^\/api\/mmo-shop\/categories$/,  // GET MMO categories
+            
+            // Reviews (public - chỉ xem, không cần đăng nhập)
+            // Lưu ý: /my-review cần auth nên không thêm vào đây
+            /^\/api\/reviews\/product\/[^\/]+\/stats$/,  // GET product reviews stats
+            /^\/api\/reviews\/product\/[^\/]+$/,  // GET product reviews list (không match /my-review vì có pattern khác trước)
+            /^\/api\/reviews\/project\/[^\/]+\/stats$/,  // GET project reviews stats
+            /^\/api\/reviews\/project\/[^\/]+$/,  // GET project reviews list
+            
+            // Admin public categories
             /^\/admin\/categories(?:\/[^\/]+)?$/,  // GET admin categories (public)
         ];
         
         // Nếu là GET request và match publicGetOnlyPaths, cho phép (không cần token)
-        if (req.method === 'GET') {
+        // NHƯNG phải check exclude patterns trước
+        if (req.method === 'GET' && !isExcluded) {
             for (const pattern of publicGetOnlyPaths) {
                 if (pattern.test(req.path)) {
                     return next();
@@ -46,22 +84,25 @@ const authMiddleware = async (req, res, next) => {
             }
         }
         
-        // ✅ Patterns cho các routes công khai khác (không phụ thuộc method)
-        const publicPathPatterns = [
-            /^\/uploads\/.*$/,  // Static files - /uploads/*
-            /^\/api\/docs/,  // Swagger UI và assets - /api/docs và /api/docs/*
-            /^\/api\/health$/,  // Health check endpoint
-            /^\/api\/supply-chain\/products\/[^\/]+\/trace$/,  // Supply chain trace
-            /^\/cart\/(add-to-cart|get-cart|update-cart|checkout)$/,  // Cart routes (optional auth via optionalAuthMiddleware)
-            /^\/payment\/vnpay\/(create-payment-url|create-qr|return|ipn)$/,  // VNPay routes
-            /^\/payment\/(vnpay-callback|momo-callback)$/,  // Payment callbacks
-            /^\/auth\/google\/.*\/callback$/,  // Google OAuth callback with any segments
-        ];
-        
-        // Kiểm tra pattern match cho các routes công khai khác
-        for (const pattern of publicPathPatterns) {
-            if (pattern.test(req.path)) {
-                return next();
+        // Nếu không bị exclude, kiểm tra public patterns
+        if (!isExcluded) {
+            // ✅ Patterns cho các routes công khai khác (không phụ thuộc method)
+            const publicPathPatterns = [
+                /^\/uploads\/.*$/,  // Static files - /uploads/*
+                /^\/api\/docs/,  // Swagger UI và assets - /api/docs và /api/docs/*
+                /^\/api\/health$/,  // Health check endpoint
+                /^\/api\/supply-chain\/products\/[^\/]+\/trace$/,  // Supply chain trace
+                /^\/cart\/(add-to-cart|get-cart|update-cart|checkout)$/,  // Cart routes (optional auth via optionalAuthMiddleware)
+                /^\/payment\/vnpay\/(create-payment-url|create-qr|return|ipn)$/,  // VNPay routes
+                /^\/payment\/(vnpay-callback|momo-callback)$/,  // Payment callbacks
+                /^\/auth\/google\/.*\/callback$/,  // Google OAuth callback with any segments
+            ];
+            
+            // Kiểm tra pattern match cho các routes công khai khác
+            for (const pattern of publicPathPatterns) {
+                if (pattern.test(req.path)) {
+                    return next();
+                }
             }
         }
         

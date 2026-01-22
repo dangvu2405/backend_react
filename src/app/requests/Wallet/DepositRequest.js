@@ -7,6 +7,13 @@ const BaseRequest = require('../BaseRequest');
 class DepositRequest extends BaseRequest {
     rules() {
         return Joi.object({
+            userId: Joi.string()
+                .optional()
+                .pattern(/^[0-9a-fA-F]{24}$/) // ObjectId pattern
+                .messages({
+                    'string.pattern.base': 'UserId không hợp lệ'
+                }),
+            
             amount: Joi.number()
                 .positive()
                 .min(10000) // Tối thiểu 10,000 VNĐ

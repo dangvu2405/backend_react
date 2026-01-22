@@ -49,11 +49,14 @@ const { DepositRequest, PayRequest } = require('../app/requests');
  * @swagger
  * /api/wallet:
  *   get:
- *     summary: Lấy số dư ví của user hiện tại
+ *     summary: Lấy số dư ví của user
  *     tags: [Wallet]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         description: ID người dùng (nếu không có token)
  *     responses:
  *       200:
  *         description: Thành công
@@ -69,7 +72,7 @@ const { DepositRequest, PayRequest } = require('../app/requests');
  *                 message:
  *                   type: string
  */
-router.get('/', authMiddleware, WalletController.getBalance);
+router.get('/', WalletController.getBalance);
 
 /**
  * @swagger
@@ -77,9 +80,6 @@ router.get('/', authMiddleware, WalletController.getBalance);
  *   post:
  *     summary: Nạp tiền vào ví
  *     tags: [Wallet]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -89,6 +89,9 @@ router.get('/', authMiddleware, WalletController.getBalance);
  *             required:
  *               - amount
  *             properties:
+ *               userId:
+ *                 type: string
+ *                 description: ID người dùng (nếu không có token)
  *               amount:
  *                 type: number
  *                 minimum: 10000
@@ -106,7 +109,7 @@ router.get('/', authMiddleware, WalletController.getBalance);
  *       400:
  *         description: Dữ liệu không hợp lệ
  */
-router.post('/deposit', authMiddleware, DepositRequest.handle(), WalletController.deposit);
+router.post('/deposit', DepositRequest.handle(), WalletController.deposit);
 
 /**
  * @swagger
@@ -114,10 +117,12 @@ router.post('/deposit', authMiddleware, DepositRequest.handle(), WalletControlle
  *   get:
  *     summary: Lấy lịch sử giao dịch
  *     tags: [Wallet]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
  *     parameters:
+ *       - in: query
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         description: ID người dùng (nếu không có token)
  *       - in: query
  *         name: page
  *         schema:
@@ -152,13 +157,13 @@ router.post('/deposit', authMiddleware, DepositRequest.handle(), WalletControlle
  *       200:
  *         description: Danh sách giao dịch
  */
-router.get('/transactions', authMiddleware, WalletController.getTransactions);
+router.get('/transactions', WalletController.getTransactions);
 
 /**
  * @swagger
  * /api/wallet/pay:
  *   post:
- *     summary: Thanh toán đơn hàng bằng số dư ví
+ *     summary: Thanh toán đơn hàng bằng số dư ví (BẮT BUỘC TOKEN)
  *     tags: [Wallet]
  *     security:
  *       - bearerAuth: []
@@ -182,6 +187,8 @@ router.get('/transactions', authMiddleware, WalletController.getTransactions);
  *         description: Thanh toán thành công
  *       400:
  *         description: Số dư không đủ hoặc dữ liệu không hợp lệ
+ *       401:
+ *         description: Chưa đăng nhập
  */
 router.post('/pay', authMiddleware, PayRequest.handle(), WalletController.pay);
 
@@ -191,10 +198,12 @@ router.post('/pay', authMiddleware, PayRequest.handle(), WalletController.pay);
  *   get:
  *     summary: Lấy thống kê giao dịch
  *     tags: [Wallet]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
  *     parameters:
+ *       - in: query
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         description: ID người dùng (nếu không có token)
  *       - in: query
  *         name: startDate
  *         schema:
@@ -209,6 +218,6 @@ router.post('/pay', authMiddleware, PayRequest.handle(), WalletController.pay);
  *       200:
  *         description: Thống kê giao dịch
  */
-router.get('/statistics', authMiddleware, WalletController.getStatistics);
+router.get('/statistics', WalletController.getStatistics);
 
 module.exports = router;

@@ -11,13 +11,14 @@ if (cloudinaryUrl) {
     cloudinary.config({
       cloudinary_url: cloudinaryUrl
     });
-    console.log('✅ Cloudinary configured successfully');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Cloudinary configured');
+    }
   } catch (error) {
     console.error('❌ Error configuring Cloudinary:', error.message);
   }
-} else {
-  console.warn('⚠️  CLOUDINARY_URL not set, Cloudinary uploads will be disabled');
 }
+// Silent if not configured (optional service)
 
 /**
  * Upload image to Cloudinary

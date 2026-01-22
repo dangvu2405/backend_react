@@ -10,20 +10,17 @@ const WalletTransactionSchema = new mongoose.Schema({
     MaVi: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Wallet',
-        required: [true, 'Mã ví là bắt buộc'],
-        index: true
+        required: [true, 'Mã ví là bắt buộc']
     },
     MaNguoiDung: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Taikhoan',
-        required: [true, 'Mã người dùng là bắt buộc'],
-        index: true
+        required: [true, 'Mã người dùng là bắt buộc']
     },
     Loai: {
         type: String,
         enum: ['deposit', 'withdraw', 'refund', 'adjustment'],
-        required: [true, 'Loại giao dịch là bắt buộc'],
-        index: true
+        required: [true, 'Loại giao dịch là bắt buộc']
     },
     SoTien: {
         type: Number,
@@ -43,14 +40,12 @@ const WalletTransactionSchema = new mongoose.Schema({
     TrangThai: {
         type: String,
         enum: ['pending', 'completed', 'failed', 'cancelled'],
-        default: 'pending',
-        index: true
+        default: 'pending'
     },
     MaDonHang: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'DonHang',
-        default: null,
-        index: true
+        default: null
     },
     PhuongThuc: {
         type: String,
@@ -60,8 +55,7 @@ const WalletTransactionSchema = new mongoose.Schema({
     MaGiaoDich: {
         type: String,
         default: '',
-        trim: true,
-        index: true
+        trim: true
     },
     MoTa: {
         type: String,

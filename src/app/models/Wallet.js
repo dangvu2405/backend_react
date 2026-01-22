@@ -11,8 +11,7 @@ const WalletSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Taikhoan',
         required: [true, 'Mã người dùng là bắt buộc'],
-        unique: true,
-        index: true
+        unique: true
     },
     SoDu: {
         type: Number,
@@ -39,7 +38,7 @@ const WalletSchema = new mongoose.Schema({
 // INDEXES
 // ============================================
 
-WalletSchema.index({ MaNguoiDung: 1 });
+// MaNguoiDung đã có unique: true nên tự động có index, không cần thêm
 WalletSchema.index({ TrangThai: 1 });
 
 // ============================================

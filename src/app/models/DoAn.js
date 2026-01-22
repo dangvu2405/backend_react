@@ -161,8 +161,7 @@ const DoAnSchema = new mongoose.Schema({
     TrangThai: {
         type: String,
         enum: ['available', 'sold_out', 'pending', 'deleted'],
-        default: 'available',
-        index: true
+        default: 'available'
     },
     IsFeatured: {
         type: Boolean,

@@ -5,7 +5,6 @@ const TaiKhoanController = require('../app/controllers/TaiKhoanController');
 const authMiddleware = require('../app/middlewares/auth.middleware');
 const upload = require('../app/middlewares/upload.middleware');
 const DonHangController = require('../app/controllers/DonHangController');
-const HeartController = require('../app/controllers/HeartController');
 const validate = require('../validations/validate.middleware');
 const { cancelOrderSchema } = require('../validations/order.validation');
 const { errorResponse } = require('../utils/response');
@@ -325,128 +324,7 @@ router.delete('/me/oauth', authMiddleware, TaiKhoanController.deleteOAuthData);
  */
 router.delete('/me/account', authMiddleware, TaiKhoanController.deleteMyAccount);
 
-/**
- * @swagger
- * /user/hearts:
- *   get:
- *     summary: Lấy danh sách sản phẩm yêu thích
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: Danh sách sản phẩm yêu thích
- */
-router.get('/hearts', authMiddleware, HeartController.getUserHearts);
-
-/**
- * @swagger
- * /user/hearts/ids:
- *   get:
- *     summary: Lấy danh sách ID sản phẩm đã yêu thích
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: Danh sách ID sản phẩm
- */
-router.get('/hearts/ids', authMiddleware, HeartController.getUserHeartProductIds);
-
-/**
- * @swagger
- * /user/hearts/check/{productId}:
- *   get:
- *     summary: Kiểm tra đã yêu thích sản phẩm chưa
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: productId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Trạng thái yêu thích
- */
-router.get('/hearts/check/:productId', authMiddleware, validateObjectId, HeartController.checkHeart);
-
-/**
- * @swagger
- * /user/hearts:
- *   post:
- *     summary: Thêm sản phẩm vào yêu thích
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - productId
- *             properties:
- *               productId:
- *                 type: string
- *     responses:
- *       200:
- *         description: Thêm vào yêu thích thành công
- */
-router.post('/hearts', authMiddleware, HeartController.addHeart);
-
-/**
- * @swagger
- * /user/hearts/{productId}:
- *   delete:
- *     summary: Xóa sản phẩm khỏi yêu thích
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: productId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Xóa khỏi yêu thích thành công
- */
-router.delete('/hearts/:productId', authMiddleware, validateObjectId, HeartController.removeHeart);
-
-/**
- * @swagger
- * /user/hearts/sync:
- *   post:
- *     summary: Đồng bộ sản phẩm yêu thích từ localStorage
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               productIds:
- *                 type: array
- *                 items:
- *                   type: string
- *     responses:
- *       200:
- *         description: Đồng bộ thành công
- */
-router.post('/hearts/sync', authMiddleware, HeartController.syncHearts);
+// Routes cho Heart (yêu thích) đã được xóa
+// Không còn hỗ trợ tính năng yêu thích sản phẩm
 
 module.exports = router;

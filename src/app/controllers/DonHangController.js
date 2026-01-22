@@ -827,9 +827,12 @@ class DonHangController {
             
             // ✅ Validate và kiểm tra tồn kho
             const validatedProducts = [];
+            const mmoProducts = [];
+            const regularProducts = [];
             let calculatedTotal = 0;
             
             for (const item of SanPham) {
+                const loaiSP = item.loaiSP || 'Product'; // Default là Product
                 const productId = item.MaSanPham || item._id || item.id;
                 const quantity = parseInt(item.SoLuong || item.quantity || 1);
                 
@@ -841,45 +844,96 @@ class DonHangController {
                     return errorResponse(res, `Số lượng không hợp lệ cho sản phẩm ${productId}`, HTTP_STATUS.BAD_REQUEST);
                 }
                 
-                // ✅ Kiểm tra sản phẩm tồn tại và còn hàng
-                const SanPhamModel = getSanPhamModel();
-                const product = await SanPhamModel.findById(productId);
-                if (!product) {
-                    return errorResponse(res, `Sản phẩm không tồn tại: ${productId}`, HTTP_STATUS.NOT_FOUND);
-                }
-                
-                if (!product.hasStock(quantity)) {
-                    return errorResponse(
-                        res,
-                        `Sản phẩm "${product.TenSanPham}" chỉ còn ${product.SoLuong} sản phẩm. Bạn đã chọn ${quantity}.`,
-                        HTTP_STATUS.BAD_REQUEST
-                    );
-                }
-                
-                const selectionInput = item.selectedDungTich || item.SelectedDungTich || item.volume;
-                const { option: resolvedVolume, options: volumeOptions, explicitRequest } = resolveOrderProductVolume(product, selectionInput);
+                if (loaiSP === 'MMO Shop') {
+                    // ✅ Xử lý MMO Product
+                    const MMOProduct = require('../models/MMOProduct');
+                    const mmoProduct = await MMOProduct.findById(productId);
+                    
+                    if (!mmoProduct) {
+                        return errorResponse(res, `Sản phẩm MMO không tồn tại: ${productId}`, HTTP_STATUS.NOT_FOUND);
+                    }
+                    
+                    if (!mmoProduct.hasStock(quantity)) {
+                        return errorResponse(
+                            res,
+                            `Sản phẩm "${mmoProduct.Ten}" chỉ còn ${mmoProduct.SoLuong} sản phẩm. Bạn đã chọn ${quantity}.`,
+                            HTTP_STATUS.BAD_REQUEST
+                        );
+                    }
+                    
+                    const itemTotal = mmoProduct.Gia * quantity;
+                    calculatedTotal += itemTotal;
+                    
+                    mmoProducts.push({
+                        productId: productId,
+                        product: mmoProduct,
+                        quantity: quantity,
+                        price: mmoProduct.Gia,
+                        total: itemTotal,
+                        loaiSP: 'MMO Shop'
+                    });
+                    
+                    validatedProducts.push({
+                        MaSanPham: productId,
+                        TenSanPham: mmoProduct.Ten,
+                        SoLuong: quantity,
+                        Gia: mmoProduct.Gia,
+                        TongTien: itemTotal,
+                        HinhAnhChinh: mmoProduct.HinhAnh || '',
+                        loaiSP: 'MMO Shop'
+                    });
+                } else {
+                    // ✅ Xử lý Product thông thường
+                    const SanPhamModel = getSanPhamModel();
+                    const product = await SanPhamModel.findById(productId);
+                    
+                    if (!product) {
+                        return errorResponse(res, `Sản phẩm không tồn tại: ${productId}`, HTTP_STATUS.NOT_FOUND);
+                    }
+                    
+                    if (!product.hasStock(quantity)) {
+                        return errorResponse(
+                            res,
+                            `Sản phẩm "${product.TenSanPham}" chỉ còn ${product.SoLuong} sản phẩm. Bạn đã chọn ${quantity}.`,
+                            HTTP_STATUS.BAD_REQUEST
+                        );
+                    }
+                    
+                    const selectionInput = item.selectedDungTich || item.SelectedDungTich || item.volume;
+                    const { option: resolvedVolume, options: volumeOptions, explicitRequest } = resolveOrderProductVolume(product, selectionInput);
 
-                if (volumeOptions.length && explicitRequest && !resolvedVolume) {
-                    return errorResponse(
-                        res,
-                        `Dung tích đã chọn cho sản phẩm "${product.TenSanPham}" không hợp lệ`,
-                        HTTP_STATUS.BAD_REQUEST
-                    );
-                }
+                    if (volumeOptions.length && explicitRequest && !resolvedVolume) {
+                        return errorResponse(
+                            res,
+                            `Dung tích đã chọn cho sản phẩm "${product.TenSanPham}" không hợp lệ`,
+                            HTTP_STATUS.BAD_REQUEST
+                        );
+                    }
 
-                const { finalPrice } = computeVariantPriceForOrder(product, resolvedVolume);
-                const itemTotal = finalPrice * quantity;
-                calculatedTotal += itemTotal;
-                
-                validatedProducts.push({
-                    MaSanPham: productId,
-                    TenSanPham: product.TenSanPham,
-                    SoLuong: quantity,
-                    Gia: finalPrice,
-                    TongTien: itemTotal,
-                    HinhAnhChinh: product.HinhAnhChinh,
-                    SelectedDungTich: formatSelectedVolumeForOrder(resolvedVolume)
-                });
+                    const { finalPrice } = computeVariantPriceForOrder(product, resolvedVolume);
+                    const itemTotal = finalPrice * quantity;
+                    calculatedTotal += itemTotal;
+                    
+                    regularProducts.push({
+                        productId: productId,
+                        product: product,
+                        quantity: quantity,
+                        price: finalPrice,
+                        total: itemTotal,
+                        resolvedVolume: resolvedVolume
+                    });
+                    
+                    validatedProducts.push({
+                        MaSanPham: productId,
+                        TenSanPham: product.TenSanPham,
+                        SoLuong: quantity,
+                        Gia: finalPrice,
+                        TongTien: itemTotal,
+                        HinhAnhChinh: product.HinhAnhChinh,
+                        SelectedDungTich: formatSelectedVolumeForOrder(resolvedVolume),
+                        loaiSP: 'Product'
+                    });
+                }
             }
             
             // ✅ Validate tổng tiền - Backend là nguồn sự thật duy nhất
@@ -969,26 +1023,48 @@ class DonHangController {
             session.startTransaction();
             
             try {
-                // Giảm số lượng tồn kho
+                // ✅ Giảm số lượng tồn kho cho regular products
                 const SanPhamModel = getSanPhamModel();
                 
-                for (const item of validatedProducts) {
-                    const productId = mongoose.Types.ObjectId.isValid(item.MaSanPham) 
-                        ? new mongoose.Types.ObjectId(item.MaSanPham)
-                        : item.MaSanPham;
+                for (const item of regularProducts) {
+                    const productId = mongoose.Types.ObjectId.isValid(item.productId) 
+                        ? new mongoose.Types.ObjectId(item.productId)
+                        : item.productId;
                     
                     const product = await SanPhamModel.findById(productId).session(session);
                     
                     if (!product) {
-                        throw new Error(`Sản phẩm không tồn tại trong transaction: ${item.MaSanPham}`);
+                        throw new Error(`Sản phẩm không tồn tại trong transaction: ${item.productId}`);
                     }
                     
                     // Kiểm tra lại tồn kho trong transaction (có thể đã thay đổi)
-                    if (!product.hasStock(item.SoLuong)) {
+                    if (!product.hasStock(item.quantity)) {
                         throw new Error(`Sản phẩm "${product.TenSanPham}" không đủ hàng. Chỉ còn ${product.SoLuong} sản phẩm.`);
                     }
                     
-                    await product.decreaseStock(item.SoLuong, { session });
+                    await product.decreaseStock(item.quantity, { session });
+                }
+                
+                // ✅ Giảm số lượng tồn kho cho MMO products
+                const MMOProduct = require('../models/MMOProduct');
+                
+                for (const item of mmoProducts) {
+                    const productId = mongoose.Types.ObjectId.isValid(item.productId) 
+                        ? new mongoose.Types.ObjectId(item.productId)
+                        : item.productId;
+                    
+                    const mmoProduct = await MMOProduct.findById(productId).session(session);
+                    
+                    if (!mmoProduct) {
+                        throw new Error(`Sản phẩm MMO không tồn tại trong transaction: ${item.productId}`);
+                    }
+                    
+                    // Kiểm tra lại tồn kho trong transaction
+                    if (!mmoProduct.hasStock(item.quantity)) {
+                        throw new Error(`Sản phẩm "${mmoProduct.Ten}" không đủ hàng. Chỉ còn ${mmoProduct.SoLuong} sản phẩm.`);
+                    }
+                    
+                    await mmoProduct.decreaseStock(item.quantity);
                 }
                 
                 // Convert MaSanPham sang ObjectId cho validatedProducts và đảm bảo tất cả trường required
@@ -997,7 +1073,7 @@ class DonHangController {
                         ? new mongoose.Types.ObjectId(item.MaSanPham)
                         : item.MaSanPham;
                     
-                    return {
+                    const orderItem = {
                         MaSanPham: productId,
                         TenSanPham: item.TenSanPham || 'Sản phẩm không xác định',
                         SoLuong: item.SoLuong,
@@ -1005,6 +1081,18 @@ class DonHangController {
                         TongTien: item.TongTien || 0,
                         HinhAnhChinh: item.HinhAnhChinh || ''
                     };
+                    
+                    // Thêm loaiSP nếu có
+                    if (item.loaiSP) {
+                        orderItem.loaiSP = item.loaiSP;
+                    }
+                    
+                    // Thêm SelectedDungTich nếu có
+                    if (item.SelectedDungTich) {
+                        orderItem.SelectedDungTich = item.SelectedDungTich;
+                    }
+                    
+                    return orderItem;
                 });
                 
                 // Validate dữ liệu trước khi tạo
@@ -1043,6 +1131,22 @@ class DonHangController {
                         donHang[0].TrangThaiThanhToan = 'paid';
                         await donHang[0].save({ session });
                     }
+                }
+                
+                // ✅ Tạo MMOOrder records cho các MMO products
+                if (mmoProducts.length > 0) {
+                    const MMOOrder = require('../models/MMOOrder');
+                    const mmoOrderData = mmoProducts.map(item => ({
+                        MaDonHang: donHang[0]._id,
+                        MaSanPham: item.productId,
+                        SoLuong: item.quantity,
+                        DonGia: item.price,
+                        ThanhTien: item.total,
+                        TrangThaiGiaoHang: 'pending',
+                        PhuongThucGiaoHang: 'in_game' // Default
+                    }));
+                    
+                    await MMOOrder.insertMany(mmoOrderData, { session });
                 }
                 
                 await session.commitTransaction();

@@ -18,6 +18,10 @@ const DepositRequest = require('./Wallet/DepositRequest');
 const PayRequest = require('./Wallet/PayRequest');
 const AdjustBalanceRequest = require('./Wallet/AdjustBalanceRequest');
 
+// MMO Requests
+const CreateMMOProductRequest = require('./MMO/CreateMMOProductRequest');
+const UpdateMMOProductRequest = require('./MMO/UpdateMMOProductRequest');
+
 module.exports = {
     // Auth
     RegisterRequest,
@@ -34,4 +38,8 @@ module.exports = {
     DepositRequest,
     PayRequest,
     AdjustBalanceRequest,
+    
+    // MMO
+    CreateMMOProductRequest,
+    UpdateMMOProductRequest,
 };

@@ -92,7 +92,7 @@ if (shouldEnableSwagger) {
         customCss: '.swagger-ui .topbar { display: none }',
         customSiteTitle: 'API Documentation'
     }));
-    console.log(`[SWAGGER] Documentation available at http://localhost:${port}/api/docs`);
+    // Silent Swagger log - accessible at /api/docs
 }
 
 app.use(authMiddleware);

@@ -3,219 +3,10 @@ const router = express.Router();
 const AdminController = require('../app/controllers/AdminController');
 const adminMiddleware = require('../app/middlewares/admin.middleware');
 const authMiddleware = require('../app/middlewares/auth.middleware');
-const { StoreProductRequest, UpdateProductRequest } = require('../app/requests');
-
 // ==========================
-// PRODUCTS
+// PRODUCTS & CATEGORIES (SanPham & LoaiSanPham)
 // ==========================
-
-/**
- * @swagger
- * /admin/products:
- *   post:
- *     summary: Tạo sản phẩm mới (Admin only)
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *     responses:
- *       201:
- *         description: Tạo sản phẩm thành công
- */
-router.post('/products', authMiddleware, adminMiddleware, StoreProductRequest.handle(), AdminController.createProduct);
-
-/**
- * @swagger
- * /admin/products:
- *   get:
- *     summary: Lấy danh sách sản phẩm (Admin only)
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: Danh sách sản phẩm
- */
-router.get('/products', authMiddleware, adminMiddleware, AdminController.getAllProducts);
-
-/**
- * @swagger
- * /admin/products/{id}:
- *   get:
- *     summary: Lấy thông tin chi tiết sản phẩm (Admin only)
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Thông tin sản phẩm
- */
-router.get('/products/:id', authMiddleware, adminMiddleware, AdminController.getProduct);
-
-/**
- * @swagger
- * /admin/products/{id}:
- *   put:
- *     summary: Cập nhật sản phẩm (Admin only)
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *     responses:
- *       200:
- *         description: Cập nhật thành công
- */
-router.put('/products/:id', authMiddleware, adminMiddleware, UpdateProductRequest.handle(), AdminController.updateProduct);
-
-/**
- * @swagger
- * /admin/products/{id}:
- *   delete:
- *     summary: Xóa sản phẩm (Admin only)
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Xóa thành công
- */
-router.delete('/products/:id', authMiddleware, adminMiddleware, AdminController.deleteProduct);
-
-// ==========================
-// CATEGORIES
-// ==========================
-
-/**
- * @swagger
- * /admin/categories:
- *   post:
- *     summary: Tạo danh mục mới (Admin only)
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *     responses:
- *       201:
- *         description: Tạo danh mục thành công
- */
-router.post('/categories', authMiddleware, adminMiddleware, AdminController.createCategory);
-
-/**
- * @swagger
- * /admin/categories:
- *   get:
- *     summary: Lấy danh sách tất cả danh mục (Public)
- *     tags: [Admin]
- *     responses:
- *       200:
- *         description: Danh sách danh mục
- */
-router.get('/categories', AdminController.getAllCategories); // Public - không cần middleware
-
-/**
- * @swagger
- * /admin/categories/{id}:
- *   get:
- *     summary: Lấy thông tin chi tiết danh mục (Public)
- *     tags: [Admin]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Thông tin danh mục
- */
-router.get('/categories/:id', AdminController.getCategory); // Public - không cần middleware
-
-/**
- * @swagger
- * /admin/categories/{id}:
- *   put:
- *     summary: Cập nhật danh mục (Admin only)
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *     responses:
- *       200:
- *         description: Cập nhật thành công
- */
-router.put('/categories/:id', authMiddleware, adminMiddleware, AdminController.updateCategory);
-
-/**
- * @swagger
- * /admin/categories/{id}:
- *   delete:
- *     summary: Xóa danh mục (Admin only)
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Xóa thành công
- */
-router.delete('/categories/:id', authMiddleware, adminMiddleware, AdminController.deleteCategory);
+// Đã xóa - Sử dụng DoAn và LoaiDoAn thay thế
 
 // ==========================
 // ROLES
@@ -1556,5 +1347,211 @@ router.put('/wallets/:userId/status', authMiddleware, adminMiddleware, AdminWall
  *         description: Lịch sử giao dịch
  */
 router.get('/wallets/:userId/transactions', authMiddleware, adminMiddleware, AdminWalletController.getUserTransactions);
+
+// ==========================
+// MMO SHOP MANAGEMENT
+// ==========================
+
+const AdminMMOShopController = require('../app/controllers/AdminMMOShopController');
+const { CreateMMOProductRequest, UpdateMMOProductRequest } = require('../app/requests');
+
+/**
+ * @swagger
+ * /admin/mmo-shop/products:
+ *   post:
+ *     summary: Tạo sản phẩm MMO mới (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - Ten
+ *               - Loai
+ *               - Game
+ *               - Gia
+ *               - SoLuong
+ *             properties:
+ *               Ten:
+ *                 type: string
+ *               Loai:
+ *                 type: string
+ *                 enum: [gold, items, accounts, services]
+ *               Game:
+ *                 type: string
+ *               Gia:
+ *                 type: number
+ *               SoLuong:
+ *                 type: number
+ *               MoTa:
+ *                 type: string
+ *               HinhAnh:
+ *                 type: string
+ *               TrangThai:
+ *                 type: string
+ *                 enum: [active, inactive]
+ *     responses:
+ *       201:
+ *         description: Tạo sản phẩm thành công
+ *       400:
+ *         description: Dữ liệu không hợp lệ
+ */
+router.post('/mmo-shop/products', authMiddleware, adminMiddleware, CreateMMOProductRequest.handle(), AdminMMOShopController.createProduct);
+
+/**
+ * @swagger
+ * /admin/mmo-shop/products/{id}:
+ *   put:
+ *     summary: Cập nhật sản phẩm MMO (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               Ten:
+ *                 type: string
+ *               Loai:
+ *                 type: string
+ *                 enum: [gold, items, accounts, services]
+ *               Game:
+ *                 type: string
+ *               Gia:
+ *                 type: number
+ *               SoLuong:
+ *                 type: number
+ *               MoTa:
+ *                 type: string
+ *               HinhAnh:
+ *                 type: string
+ *               TrangThai:
+ *                 type: string
+ *                 enum: [active, inactive, out_of_stock]
+ *     responses:
+ *       200:
+ *         description: Cập nhật thành công
+ *       404:
+ *         description: Sản phẩm không tồn tại
+ */
+router.put('/mmo-shop/products/:id', authMiddleware, adminMiddleware, UpdateMMOProductRequest.handle(), AdminMMOShopController.updateProduct);
+
+/**
+ * @swagger
+ * /admin/mmo-shop/products/{id}:
+ *   delete:
+ *     summary: Xóa sản phẩm MMO (Admin only - soft delete)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Xóa thành công
+ *       404:
+ *         description: Sản phẩm không tồn tại
+ */
+router.delete('/mmo-shop/products/:id', authMiddleware, adminMiddleware, AdminMMOShopController.deleteProduct);
+
+/**
+ * @swagger
+ * /admin/mmo-shop/products:
+ *   get:
+ *     summary: Lấy danh sách sản phẩm MMO (Admin only - có thể xem tất cả)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: game
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive, out_of_stock, all]
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Danh sách sản phẩm
+ */
+router.get('/mmo-shop/products', authMiddleware, adminMiddleware, AdminMMOShopController.getProducts);
+
+/**
+ * @swagger
+ * /admin/mmo-shop/stats:
+ *   get:
+ *     summary: Lấy thống kê MMO Shop (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     responses:
+ *       200:
+ *         description: Thống kê MMO Shop
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     totalProducts:
+ *                       type: integer
+ *                     totalByCategory:
+ *                       type: object
+ *                     totalByStatus:
+ *                       type: object
+ *                     totalRevenue:
+ *                       type: number
+ *                     totalOrders:
+ *                       type: integer
+ *                     lowStockProducts:
+ *                       type: integer
+ *                     topGames:
+ *                       type: array
+ */
+router.get('/mmo-shop/stats', authMiddleware, adminMiddleware, AdminMMOShopController.getStats);
 
 module.exports = router;

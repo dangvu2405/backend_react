@@ -12,7 +12,7 @@ const connectTestDB = async () => {
         return connection;
     }
 
-    const mongoURI = process.env.MONGODB_TEST_URI || 'mongodb://localhost:27017/perfume-shop-test';
+    const mongoURI = process.env.MONGODB_TEST_URI || 'mongodb://localhost:27017/academic-project-shop-test';
     
     connection = await mongoose.connect(mongoURI, {
         useNewUrlParser: true,

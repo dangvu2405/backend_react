@@ -8,6 +8,7 @@ const reviewsRouter = require('./reviews.js');
 const paymentRouter = require('./payment.routes.js');
 const chatRouter = require('./chat.js');
 const walletRouter = require('./wallet.js');
+const mmoShopRouter = require('./mmo-shop.js');
 
 function router(app) {
     app.use('/auth', authRouter);   
@@ -19,6 +20,7 @@ function router(app) {
     app.use('/payment', paymentRouter);
     app.use('/chat', chatRouter);
     app.use('/api/wallet', walletRouter);
+    app.use('/api/mmo-shop', mmoShopRouter);
 }
 
 module.exports = router;

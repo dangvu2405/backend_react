@@ -8,13 +8,19 @@ class WalletController {
     /**
      * Lấy số dư ví của user hiện tại
      * GET /api/wallet
+     * Có thể lấy userId từ query hoặc từ token (nếu có)
      */
     async getBalance(req, res) {
         try {
-            const userId = req.user.id || req.user._id;
+            // Lấy userId từ token (nếu có) hoặc từ query
+            const userId = req.user?.id || req.user?._id || req.query.userId;
             
             if (!userId) {
-                return errorResponse(res, 'Không tìm thấy thông tin người dùng', HTTP_STATUS.UNAUTHORIZED);
+                return errorResponse(res, 'Vui lòng cung cấp userId', HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            if (!mongoose.Types.ObjectId.isValid(userId)) {
+                return errorResponse(res, 'UserId không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
             
             const wallet = await Wallet.getOrCreate(userId);
@@ -33,14 +39,20 @@ class WalletController {
     /**
      * Nạp tiền vào ví
      * POST /api/wallet/deposit
+     * Có thể lấy userId từ body hoặc từ token (nếu có)
      */
     async deposit(req, res) {
         try {
-            const userId = req.user.id || req.user._id;
+            // Lấy userId từ token (nếu có) hoặc từ body
+            const userId = req.user?.id || req.user?._id || req.body.userId;
             const { amount, paymentMethod, transactionId } = req.body;
             
             if (!userId) {
-                return errorResponse(res, 'Không tìm thấy thông tin người dùng', HTTP_STATUS.UNAUTHORIZED);
+                return errorResponse(res, 'Vui lòng cung cấp userId', HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            if (!mongoose.Types.ObjectId.isValid(userId)) {
+                return errorResponse(res, 'UserId không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
             
             // Validate amount
@@ -112,13 +124,19 @@ class WalletController {
     /**
      * Lấy lịch sử giao dịch
      * GET /api/wallet/transactions
+     * Có thể lấy userId từ query hoặc từ token (nếu có)
      */
     async getTransactions(req, res) {
         try {
-            const userId = req.user.id || req.user._id;
+            // Lấy userId từ token (nếu có) hoặc từ query
+            const userId = req.user?.id || req.user?._id || req.query.userId;
             
             if (!userId) {
-                return errorResponse(res, 'Không tìm thấy thông tin người dùng', HTTP_STATUS.UNAUTHORIZED);
+                return errorResponse(res, 'Vui lòng cung cấp userId', HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            if (!mongoose.Types.ObjectId.isValid(userId)) {
+                return errorResponse(res, 'UserId không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
             
             const {
@@ -164,14 +182,16 @@ class WalletController {
     /**
      * Thanh toán bằng số dư ví
      * POST /api/wallet/pay
+     * BẮT BUỘC phải có token để xác thực
      */
     async pay(req, res) {
         try {
-            const userId = req.user.id || req.user._id;
+            // Bắt buộc phải có token cho thanh toán
+            const userId = req.user?.id || req.user?._id;
             const { orderId, amount } = req.body;
             
             if (!userId) {
-                return errorResponse(res, 'Không tìm thấy thông tin người dùng', HTTP_STATUS.UNAUTHORIZED);
+                return errorResponse(res, 'Vui lòng đăng nhập để thanh toán', HTTP_STATUS.UNAUTHORIZED);
             }
             
             if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
@@ -253,13 +273,19 @@ class WalletController {
     /**
      * Lấy thống kê giao dịch
      * GET /api/wallet/statistics
+     * Có thể lấy userId từ query hoặc từ token (nếu có)
      */
     async getStatistics(req, res) {
         try {
-            const userId = req.user.id || req.user._id;
+            // Lấy userId từ token (nếu có) hoặc từ query
+            const userId = req.user?.id || req.user?._id || req.query.userId;
             
             if (!userId) {
-                return errorResponse(res, 'Không tìm thấy thông tin người dùng', HTTP_STATUS.UNAUTHORIZED);
+                return errorResponse(res, 'Vui lòng cung cấp userId', HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            if (!mongoose.Types.ObjectId.isValid(userId)) {
+                return errorResponse(res, 'UserId không hợp lệ', HTTP_STATUS.BAD_REQUEST);
             }
             
             const { startDate, endDate } = req.query;

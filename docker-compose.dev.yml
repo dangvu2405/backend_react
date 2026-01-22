@@ -15,7 +15,7 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=3001
-      - MONGODB_URI=${MONGODB_URI:-mongodb://admin:password@mongo:27017/perfume-shop-dev?authSource=admin}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://admin:password@mongo:27017/academic-project-shop-dev?authSource=admin}
       - SESSION_SECRET=dev-session-secret
       - JWT_SECRET=dev-jwt-secret
       - JWT_REFRESH_SECRET=dev-refresh-secret
@@ -41,7 +41,7 @@ services:
     ports:
       - "${MONGO_PORT:-27017}:27017"
     environment:
-      - MONGO_INITDB_DATABASE=perfume-shop-dev
+      - MONGO_INITDB_DATABASE=academic-project-shop-dev
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-admin}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-password}
     volumes:

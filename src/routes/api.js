@@ -1,7 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const SanPhamController = require('../app/controllers/SanPhamController');
-const LoaiSanPhamController = require('../app/controllers/LoaiSanPhamController');
 const { uploadLimiter } = require('../app/middlewares/rateLimit.middleware');
 const cloudinary = require('cloudinary').v2;
 cloudinary.config({
@@ -41,63 +39,8 @@ router.get('/health', (req, res) => {
     });
 });
 
-/**
- * @swagger
- * /api/products:
- *   get:
- *     summary: Lấy danh sách tất cả sản phẩm
- *     tags: [Products]
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           default: 1
- *         description: Số trang
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 10
- *         description: Số lượng sản phẩm mỗi trang
- *     responses:
- *       200:
- *         description: Danh sách sản phẩm
- */
-router.get('/products', SanPhamController.getAllProducts);
-
-/**
- * @swagger
- * /api/categories:
- *   get:
- *     summary: Lấy danh sách tất cả danh mục
- *     tags: [Categories]
- *     responses:
- *       200:
- *         description: Danh sách danh mục
- */
-router.get('/categories', LoaiSanPhamController.getAllCategories);
-
-/**
- * @swagger
- * /api/products/{id}:
- *   get:
- *     summary: Lấy thông tin chi tiết sản phẩm
- *     tags: [Products]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID của sản phẩm
- *     responses:
- *       200:
- *         description: Thông tin sản phẩm
- *       404:
- *         description: Không tìm thấy sản phẩm
- */
-router.get('/products/:id', SanPhamController.getProduct);
+// Routes cho SanPham và LoaiSanPham đã được xóa
+// Sử dụng DoAn và LoaiDoAn thay thế
 router.post('/upload', uploadLimiter, async (req, res) => {
     try {
         const { image } = req.body;

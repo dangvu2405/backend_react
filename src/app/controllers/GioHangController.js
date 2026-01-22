@@ -115,31 +115,72 @@ class GioHangController {
                 return errorResponse(res, 'Số lượng phải là số nguyên dương', HTTP_STATUS.BAD_REQUEST);
             }
 
-            // ✅ Kiểm tra sản phẩm tồn tại
-            const product = await SanPham.findById(productId);
-            if (!product) {
-                return errorResponse(res, 'Sản phẩm không tồn tại', HTTP_STATUS.NOT_FOUND);
+            // ✅ Kiểm tra loại sản phẩm (MMO Shop hoặc Product)
+            const loaiSP = req.body.loaiSP || 'Product'; // Default là Product
+            let product = null;
+            let productName = '';
+            let productPrice = 0;
+            let productImage = '';
+
+            if (loaiSP === 'MMO Shop') {
+                // Kiểm tra MMO Product
+                const MMOProduct = require('../models/MMOProduct');
+                product = await MMOProduct.findById(productId);
+                if (!product) {
+                    return errorResponse(res, 'Sản phẩm MMO không tồn tại', HTTP_STATUS.NOT_FOUND);
+                }
+                
+                // Kiểm tra tồn kho MMO
+                if (!product.hasStock(qty)) {
+                    return errorResponse(
+                        res,
+                        `Sản phẩm "${product.Ten}" chỉ còn ${product.SoLuong} sản phẩm`,
+                        HTTP_STATUS.BAD_REQUEST
+                    );
+                }
+                
+                productName = product.Ten;
+                productPrice = product.Gia;
+                productImage = product.HinhAnh || '';
+            } else {
+                // Kiểm tra Product thông thường
+                product = await SanPham.findById(productId);
+                if (!product) {
+                    return errorResponse(res, 'Sản phẩm không tồn tại', HTTP_STATUS.NOT_FOUND);
+                }
+                
+                // Kiểm tra tồn kho
+                if (!product.hasStock(qty)) {
+                    return errorResponse(
+                        res,
+                        `Sản phẩm "${product.TenSanPham}" chỉ còn ${product.SoLuong} sản phẩm`,
+                        HTTP_STATUS.BAD_REQUEST
+                    );
+                }
+                
+                productName = product.TenSanPham;
+                productPrice = product.Gia;
+                productImage = product.HinhAnhChinh || '';
             }
 
-            // ✅ Kiểm tra tồn kho
-            if (!product.hasStock(qty)) {
-                return errorResponse(
-                    res,
-                    `Sản phẩm "${product.TenSanPham}" chỉ còn ${product.SoLuong} sản phẩm`,
-                    HTTP_STATUS.BAD_REQUEST
-                );
+            // Xử lý variant price cho Product thông thường (MMO không có variant)
+            let finalPrice = productPrice;
+            let selectedVolumePayload = null;
+            let selectedVolumeValue = null;
+            
+            if (loaiSP !== 'MMO Shop') {
+                const selectionInput = req.body.selectedDungTich || req.body.selectedVolume || req.body.volume;
+                const { option: resolvedVolume, options: volumeOptions, explicitRequest } = resolveProductVolumeSelection(product, selectionInput);
+
+                if (volumeOptions.length && explicitRequest && !resolvedVolume) {
+                    return errorResponse(res, 'Dung tích đã chọn không hợp lệ', HTTP_STATUS.BAD_REQUEST);
+                }
+
+                const priceResult = computeVariantPrice(product, resolvedVolume);
+                finalPrice = priceResult.finalPrice;
+                selectedVolumePayload = formatSelectedVolumePayload(resolvedVolume);
+                selectedVolumeValue = resolvedVolume ? Number(resolvedVolume.value) : null;
             }
-
-            const selectionInput = req.body.selectedDungTich || req.body.selectedVolume || req.body.volume;
-            const { option: resolvedVolume, options: volumeOptions, explicitRequest } = resolveProductVolumeSelection(product, selectionInput);
-
-            if (volumeOptions.length && explicitRequest && !resolvedVolume) {
-                return errorResponse(res, 'Dung tích đã chọn không hợp lệ', HTTP_STATUS.BAD_REQUEST);
-            }
-
-            const { finalPrice } = computeVariantPrice(product, resolvedVolume);
-            const selectedVolumePayload = formatSelectedVolumePayload(resolvedVolume);
-            const selectedVolumeValue = resolvedVolume ? Number(resolvedVolume.value) : null;
 
             // ✅ Tìm hoặc tạo giỏ hàng
             let cart = await GioHang.findOne({ IdKhachHang: ownerId });
@@ -151,14 +192,24 @@ class GioHangController {
                 });
             }
 
-            // ✅ Tìm item trong giỏ hàng
+            // ✅ Tìm item trong giỏ hàng (check cả loaiSP)
             const existingItemIndex = cart.Items.findIndex(item => {
                 const sameProduct = item.IdSanPham?.toString() === productId;
                 if (!sameProduct) return false;
-                const itemVolumeValue = item.SelectedDungTich?.value !== undefined && item.SelectedDungTich?.value !== null
-                    ? Number(item.SelectedDungTich.value)
-                    : null;
-                return itemVolumeValue === (selectedVolumeValue ?? null);
+                
+                // Check loaiSP
+                const itemLoaiSP = item.loaiSP || 'Product';
+                if (itemLoaiSP !== loaiSP) return false;
+                
+                // Check volume cho Product thông thường
+                if (loaiSP !== 'MMO Shop') {
+                    const itemVolumeValue = item.SelectedDungTich?.value !== undefined && item.SelectedDungTich?.value !== null
+                        ? Number(item.SelectedDungTich.value)
+                        : null;
+                    return itemVolumeValue === (selectedVolumeValue ?? null);
+                }
+                
+                return true; // MMO products không có variant
             });
 
             if (existingItemIndex >= 0) {
@@ -166,12 +217,24 @@ class GioHangController {
                 const newQuantity = cart.Items[existingItemIndex].SoLuong + qty;
                 
                 // Kiểm tra tồn kho lại
-                if (!product.hasStock(newQuantity)) {
-                    return errorResponse(
-                        res,
-                        `Số lượng vượt quá tồn kho. Hiện tại có ${product.SoLuong} sản phẩm`,
-                        HTTP_STATUS.BAD_REQUEST
-                    );
+                if (loaiSP === 'MMO Shop') {
+                    const MMOProduct = require('../models/MMOProduct');
+                    const mmoProduct = await MMOProduct.findById(productId);
+                    if (!mmoProduct.hasStock(newQuantity)) {
+                        return errorResponse(
+                            res,
+                            `Số lượng vượt quá tồn kho. Hiện tại có ${mmoProduct.SoLuong} sản phẩm`,
+                            HTTP_STATUS.BAD_REQUEST
+                        );
+                    }
+                } else {
+                    if (!product.hasStock(newQuantity)) {
+                        return errorResponse(
+                            res,
+                            `Số lượng vượt quá tồn kho. Hiện tại có ${product.SoLuong} sản phẩm`,
+                            HTTP_STATUS.BAD_REQUEST
+                        );
+                    }
                 }
 
                 cart.Items[existingItemIndex].SoLuong = newQuantity;
@@ -182,14 +245,24 @@ class GioHangController {
                 cart.Items[existingItemIndex].ThanhTien = finalPrice * newQuantity;
             } else {
                 // ✅ Thêm item mới
-                cart.Items.push({
+                const newItem = {
                     IdSanPham: productId,
-                    TenSanPham: product.TenSanPham,
+                    TenSanPham: productName,
                     Gia: finalPrice,
                     SoLuong: qty,
                     ThanhTien: finalPrice * qty,
-                    SelectedDungTich: selectedVolumePayload
-                });
+                    loaiSP: loaiSP // Thêm loaiSP để phân biệt
+                };
+                
+                if (selectedVolumePayload) {
+                    newItem.SelectedDungTich = selectedVolumePayload;
+                }
+                
+                if (productImage) {
+                    newItem.HinhAnh = productImage;
+                }
+                
+                cart.Items.push(newItem);
             }
 
             await cart.save();

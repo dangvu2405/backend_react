@@ -1,13 +1,8 @@
 const mongoose = require('mongoose');
-const SanPhamController = require('./SanPhamController');
-const LoaiSanPhamController = require('./LoaiSanPhamController');
 const RoleController = require('./RoleController');
 const TaiKhoanController = require('./TaiKhoanController');
 const DonHangController = require('./DonHangController');
 const GioHangController = require('./GioHangController');
-const KhoController = require('./KhoController');
-const SanPham = require('../models/SanPham');
-const LoaiSanPham = require('../models/LoaiSanPham');
 const Role = require('../models/Role');
 const TaiKhoan = require('../models/Taikhoan');
 const DonHang = require('../models/DonHang');
@@ -18,50 +13,15 @@ const { successResponse, errorResponse } = require('../../utils/response');
 
 class AdminController {
     // ==========================
-    // PRODUCT MANAGEMENT
+    // PRODUCT MANAGEMENT (SanPham)
     // ==========================
-    async createProduct(req, res) {
-        return SanPhamController.createProduct(req, res);
-    }
-
-    async getProduct(req, res) {
-        return SanPhamController.getProduct(req, res);
-    }
-
-    async getAllProducts(req, res) {
-        return SanPhamController.getAllProducts(req, res);
-    }
-
-    async updateProduct(req, res) {
-        return SanPhamController.updateProduct(req, res);
-    }
-
-    async deleteProduct(req, res) {
-        return SanPhamController.deleteProduct(req, res);
-    }
+    // Đã xóa - Sử dụng DoAn thay thế
 
     // ==========================
-    // CATEGORY MANAGEMENT
+    // CATEGORY MANAGEMENT (LoaiSanPham)
     // ==========================
-    async createCategory(req, res) {
-        return LoaiSanPhamController.createCategory(req, res);
-    }
-
-    async getCategory(req, res) {
-        return LoaiSanPhamController.getCategoryById(req, res);
-    }
-
-    async getAllCategories(req, res) {
-        return LoaiSanPhamController.getAllCategories(req, res);
-    }
-
-    async updateCategory(req, res) {
-        return LoaiSanPhamController.updateCategory(req, res);
-    }
-
-    async deleteCategory(req, res) {
-        return LoaiSanPhamController.deleteCategory(req, res);
-    }
+    // Đã xóa - Sử dụng LoaiDoAn thay thế
+    // Category methods đã xóa - Sử dụng LoaiDoAn thay thế
 
     // ==========================
     // ROLE MANAGEMENT
@@ -282,29 +242,7 @@ class AdminController {
     // ==========================
     // INVENTORY MANAGEMENT
     // ==========================
-    async getInventory(req, res) {
-        return KhoController.getInventory(req, res);
-    }
-
-    async getInventoryItem(req, res) {
-        return KhoController.getInventoryItem(req, res);
-    }
-
-    async increaseStock(req, res) {
-        return KhoController.increaseStock(req, res);
-    }
-
-    async decreaseStock(req, res) {
-        return KhoController.decreaseStock(req, res);
-    }
-
-    async setStock(req, res) {
-        return KhoController.setStock(req, res);
-    }
-
-    async clearStock(req, res) {
-        return KhoController.clearStock(req, res);
-    }
+    // Inventory methods đã xóa - KhoController đã bị xóa
 
     // ==========================
     // STATISTICS / DASHBOARD
