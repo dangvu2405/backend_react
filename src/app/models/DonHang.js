@@ -26,21 +26,101 @@ const DonHangSchema = new mongoose.Schema({
             message: 'Mã khách hàng không hợp lệ'
         }
     },
+    // Legacy: Giữ lại để backward compatibility
     SanPham: {
         type: [{
             MaSanPham: {
                 type: mongoose.Schema.Types.ObjectId,
                 ref: 'SanPham',
-                required: true
+                required: false // Không bắt buộc nữa
             },
             TenSanPham: {
+                type: String,
+                required: false,
+                trim: true
+            },
+            SoLuong: {
+                type: Number,
+                required: false,
+                min: [1, 'Số lượng phải lớn hơn 0']
+            },
+            Gia: {
+                type: Number,
+                required: false,
+                min: [0, 'Giá không được âm']
+            },
+            TongTien: {
+                type: Number,
+                required: false,
+                min: [0, 'Tổng tiền không được âm']
+            },
+            HinhAnhChinh: {
+                type: String,
+                default: ''
+            },
+            SelectedDungTich: {
+                value: {
+                    type: Number,
+                    default: null
+                },
+                label: {
+                    type: String,
+                    trim: true,
+                    maxlength: 50,
+                    default: ''
+                },
+                priceDiff: {
+                    type: Number,
+                    default: 0
+                },
+                sku: {
+                    type: String,
+                    trim: true,
+                    maxlength: 100,
+                    default: ''
+                }
+            },
+            // New fields for projects
+            LinkTai: {
+                type: String,
+                default: '',
+                trim: true
+            },
+            SoLuotTai: {
+                type: Number,
+                default: 0,
+                min: [0, 'Số lượt tải không được âm']
+            },
+            NgayTai: {
+                type: Date,
+                default: null
+            }
+        }],
+        required: false, // Không bắt buộc nữa
+        validate: {
+            validator: function(products) {
+                if (!products) return true;
+                return Array.isArray(products) && products.length > 0 && products.length <= 1000;
+            },
+            message: 'Sản phẩm phải có ít nhất 1 sản phẩm và không quá 1000 sản phẩm'
+        }
+    },
+    // New: Đồ án
+    DoAn: {
+        type: [{
+            MaDoAn: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'DoAn',
+                required: true
+            },
+            TieuDe: {
                 type: String,
                 required: true,
                 trim: true
             },
             SoLuong: {
                 type: Number,
-                required: true,
+                default: 1,
                 min: [1, 'Số lượng phải lớn hơn 0']
             },
             Gia: {
@@ -56,36 +136,33 @@ const DonHangSchema = new mongoose.Schema({
             HinhAnhChinh: {
                 type: String,
                 default: ''
-        },
-        SelectedDungTich: {
-            value: {
+            },
+            LinkTai: {
+                type: String,
+                default: '',
+                trim: true
+            },
+            SoLuotTai: {
                 type: Number,
+                default: 0,
+                min: [0, 'Số lượt tải không được âm']
+            },
+            NgayTai: {
+                type: Date,
                 default: null
             },
-            label: {
-                type: String,
-                trim: true,
-                maxlength: 50,
-                default: ''
-            },
-            priceDiff: {
-                type: Number,
-                default: 0
-            },
-            sku: {
-                type: String,
-                trim: true,
-                maxlength: 100,
-                default: ''
-            }
+            HetHanTai: {
+                type: Date,
+                default: null
             }
         }],
-        required: [true, 'Sản phẩm là bắt buộc'],
+        required: false,
         validate: {
-            validator: function(products) {
-                return Array.isArray(products) && products.length > 0 && products.length <= 1000;
+            validator: function(projects) {
+                if (!projects) return true;
+                return Array.isArray(projects) && projects.length > 0 && projects.length <= 1000;
             },
-            message: 'Sản phẩm phải có ít nhất 1 sản phẩm và không quá 1000 sản phẩm'
+            message: 'Đồ án phải có ít nhất 1 đồ án và không quá 1000 đồ án'
         }
     },
     TongTien: {
@@ -93,12 +170,26 @@ const DonHangSchema = new mongoose.Schema({
         required: [true, 'Tổng tiền là bắt buộc'],
         min: [0, 'Tổng tiền không được âm']
     },
+    // Legacy: Địa chỉ giao hàng (cho nước hoa)
     DiaChi: {
         type: String,
-        required: [true, 'Địa chỉ giao hàng là bắt buộc'],
+        required: false, // Không bắt buộc cho đồ án
         trim: true,
         minlength: [10, 'Địa chỉ phải có ít nhất 10 ký tự'],
         maxlength: [500, 'Địa chỉ không được quá 500 ký tự']
+    },
+    // New: Email nhận file (cho đồ án)
+    EmailNhanFile: {
+        type: String,
+        required: false,
+        trim: true,
+        validate: {
+            validator: function(email) {
+                if (!email) return true; // Optional
+                return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+            },
+            message: 'Email không hợp lệ'
+        }
     },
     ThongTinNhanHang: {
         type: {
@@ -128,7 +219,7 @@ const DonHangSchema = new mongoose.Schema({
     TrangThai: {
         type: String,
         enum: {
-            values: ['pending', 'confirmed', 'shipping', 'delivered', 'cancelled'],
+            values: ['pending', 'confirmed', 'shipping', 'delivered', 'sent', 'downloaded', 'cancelled'],
             message: 'Trạng thái không hợp lệ'
         },
         default: 'pending'
@@ -238,6 +329,20 @@ const DonHangSchema = new mongoose.Schema({
     VNPayPayDate: {
         type: String,
         default: null
+    },
+    // New: Download expiry cho đồ án
+    HetHanTai: {
+        type: Date,
+        default: null
+    },
+    // New: Đã gửi email download chưa
+    DaGuiEmail: {
+        type: Boolean,
+        default: false
+    },
+    NgayGuiEmail: {
+        type: Date,
+        default: null
     }
 }, {
     timestamps: true,
@@ -338,6 +443,38 @@ DonHangSchema.methods.ship = async function() {
     }
     
     this.TrangThai = 'shipping';
+    return this.save();
+};
+
+/**
+ * Đánh dấu đã gửi file (cho đồ án)
+ */
+DonHangSchema.methods.markAsSent = async function() {
+    if (this.TrangThai !== 'confirmed' && this.TrangThai !== 'paid') {
+        throw new Error('Chỉ có thể gửi file cho đơn hàng đã xác nhận hoặc đã thanh toán');
+    }
+    
+    this.TrangThai = 'sent';
+    this.DaGuiEmail = true;
+    this.NgayGuiEmail = new Date();
+    
+    // Set expiry date (7 days from now)
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 7);
+    this.HetHanTai = expiryDate;
+    
+    return this.save();
+};
+
+/**
+ * Đánh dấu đã tải về
+ */
+DonHangSchema.methods.markAsDownloaded = async function() {
+    if (this.TrangThai !== 'sent') {
+        throw new Error('Chỉ có thể đánh dấu đã tải cho đơn hàng đã gửi');
+    }
+    
+    this.TrangThai = 'downloaded';
     return this.save();
 };
 

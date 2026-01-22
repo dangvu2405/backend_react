@@ -937,9 +937,31 @@ class DonHangController {
             }
             
             // ✅ Validate PhuongThucThanhToan với enum
-            const validPaymentMethods = ['COD', 'VNPay', 'VNPayQR', 'BANK', 'CARD', 'MoMo', 'Chuyển khoản'];
+            const validPaymentMethods = ['COD', 'VNPay', 'VNPayQR', 'BANK', 'CARD', 'MoMo', 'Chuyển khoản', 'Wallet'];
             if (!validPaymentMethods.includes(PhuongThucThanhToan)) {
                 return errorResponse(res, `Phương thức thanh toán không hợp lệ: ${PhuongThucThanhToan}`, HTTP_STATUS.BAD_REQUEST);
+            }
+            
+            // ✅ Kiểm tra thanh toán bằng ví
+            let walletPaymentSuccess = false;
+            if (PhuongThucThanhToan === 'Wallet') {
+                // Chỉ user đã đăng nhập mới có thể thanh toán bằng ví
+                if (!req.user || !req.user.id) {
+                    return errorResponse(res, 'Vui lòng đăng nhập để sử dụng ví điện tử', HTTP_STATUS.UNAUTHORIZED);
+                }
+                
+                const Wallet = require('../models/Wallet');
+                const wallet = await Wallet.getByUserId(req.user.id || req.user._id);
+                
+                if (!wallet) {
+                    return errorResponse(res, 'Ví không tồn tại', HTTP_STATUS.NOT_FOUND);
+                }
+                
+                if (!wallet.hasEnoughBalance(finalTotal)) {
+                    return errorResponse(res, `Số dư ví không đủ. Số dư hiện tại: ${wallet.SoDu.toLocaleString('vi-VN')} VNĐ`, HTTP_STATUS.BAD_REQUEST);
+                }
+                
+                walletPaymentSuccess = true; // Mark để trừ tiền sau khi tạo order thành công
             }
             
             // ✅ Sử dụng Transaction để đảm bảo atomicity
@@ -1011,6 +1033,18 @@ class DonHangController {
                 // Tạo đơn hàng
                 const donHang = await DonHang.create([orderData], { session });
                 
+                // ✅ Xử lý thanh toán bằng ví nếu có
+                if (walletPaymentSuccess && PhuongThucThanhToan === 'Wallet') {
+                    const Wallet = require('../models/Wallet');
+                    const wallet = await Wallet.getByUserId(req.user.id || req.user._id);
+                    
+                    if (wallet && wallet.hasEnoughBalance(finalTotal)) {
+                        await wallet.withdraw(finalTotal, donHang[0]._id.toString());
+                        donHang[0].TrangThaiThanhToan = 'paid';
+                        await donHang[0].save({ session });
+                    }
+                }
+                
                 await session.commitTransaction();
                 session.endSession();
                 
@@ -1020,8 +1054,11 @@ class DonHangController {
                 const response = {
                     orderId: orderId,
                     donHang: donHangObj,
-                    requiresPayment: PhuongThucThanhToan !== PAYMENT_METHODS.COD && PhuongThucThanhToan !== 'COD',
-                    paymentMethod: PhuongThucThanhToan
+                    requiresPayment: PhuongThucThanhToan !== PAYMENT_METHODS.COD && 
+                                    PhuongThucThanhToan !== 'COD' && 
+                                    PhuongThucThanhToan !== 'Wallet',
+                    paymentMethod: PhuongThucThanhToan,
+                    paymentStatus: donHangObj.TrangThaiThanhToan
                 };
                 
                 return successResponse(
@@ -1029,7 +1066,9 @@ class DonHangController {
                     response,
                     (PhuongThucThanhToan === PAYMENT_METHODS.COD || PhuongThucThanhToan === 'COD')
                         ? 'Đơn hàng đã được tạo'
-                        : 'Đơn hàng đã được tạo. Vui lòng thanh toán.',
+                        : (PhuongThucThanhToan === 'Wallet')
+                            ? 'Đơn hàng đã được tạo và thanh toán thành công bằng ví'
+                            : 'Đơn hàng đã được tạo. Vui lòng thanh toán.',
                     HTTP_STATUS.OK
                 );
             } catch (transactionError) {

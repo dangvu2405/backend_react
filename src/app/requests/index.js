@@ -13,6 +13,11 @@ const UpdateProductRequest = require('./Product/UpdateProductRequest');
 // Order Requests
 const CheckoutRequest = require('./Order/CheckoutRequest');
 
+// Wallet Requests
+const DepositRequest = require('./Wallet/DepositRequest');
+const PayRequest = require('./Wallet/PayRequest');
+const AdjustBalanceRequest = require('./Wallet/AdjustBalanceRequest');
+
 module.exports = {
     // Auth
     RegisterRequest,
@@ -24,4 +29,9 @@ module.exports = {
     
     // Order
     CheckoutRequest,
+    
+    // Wallet
+    DepositRequest,
+    PayRequest,
+    AdjustBalanceRequest,
 };

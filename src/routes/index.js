@@ -7,6 +7,7 @@ const adminRouter = require('./admin.js');
 const reviewsRouter = require('./reviews.js');
 const paymentRouter = require('./payment.routes.js');
 const chatRouter = require('./chat.js');
+const walletRouter = require('./wallet.js');
 
 function router(app) {
     app.use('/auth', authRouter);   
@@ -17,6 +18,7 @@ function router(app) {
     app.use('/api/reviews', reviewsRouter);
     app.use('/payment', paymentRouter);
     app.use('/chat', chatRouter);
+    app.use('/api/wallet', walletRouter);
 }
 
 module.exports = router;

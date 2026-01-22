@@ -1346,4 +1346,215 @@ router.put('/vouchers/:id', authMiddleware, adminMiddleware, AdminController.upd
  */
 router.delete('/vouchers/:id', authMiddleware, adminMiddleware, AdminController.deleteVoucher);
 
+// ==========================
+// WALLET MANAGEMENT
+// ==========================
+
+const AdminWalletController = require('../app/controllers/AdminWalletController');
+const { AdjustBalanceRequest } = require('../app/requests');
+
+/**
+ * @swagger
+ * /admin/wallets:
+ *   get:
+ *     summary: Lấy danh sách tất cả ví (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, frozen, suspended]
+ *       - in: query
+ *         name: minBalance
+ *         schema:
+ *           type: number
+ *       - in: query
+ *         name: maxBalance
+ *         schema:
+ *           type: number
+ *     responses:
+ *       200:
+ *         description: Danh sách ví
+ */
+router.get('/wallets', authMiddleware, adminMiddleware, AdminWalletController.getAllWallets);
+
+/**
+ * @swagger
+ * /admin/wallets/statistics:
+ *   get:
+ *     summary: Thống kê tổng quan ví (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Thống kê ví
+ */
+router.get('/wallets/statistics', authMiddleware, adminMiddleware, AdminWalletController.getStatistics);
+
+/**
+ * @swagger
+ * /admin/wallets/{userId}:
+ *   get:
+ *     summary: Lấy chi tiết ví của user (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Thông tin ví
+ */
+router.get('/wallets/:userId', authMiddleware, adminMiddleware, AdminWalletController.getWalletByUserId);
+
+/**
+ * @swagger
+ * /admin/wallets/{userId}/adjust:
+ *   post:
+ *     summary: Điều chỉnh số dư ví (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - amount
+ *               - reason
+ *             properties:
+ *               amount:
+ *                 type: number
+ *               reason:
+ *                 type: string
+ *               type:
+ *                 type: string
+ *                 enum: [deposit, withdraw]
+ *     responses:
+ *       200:
+ *         description: Điều chỉnh thành công
+ */
+router.post('/wallets/:userId/adjust', authMiddleware, adminMiddleware, AdjustBalanceRequest.handle(), AdminWalletController.adjustBalance);
+
+/**
+ * @swagger
+ * /admin/wallets/{userId}/status:
+ *   put:
+ *     summary: Khóa/Mở khóa ví (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [active, frozen, suspended]
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Cập nhật trạng thái thành công
+ */
+router.put('/wallets/:userId/status', authMiddleware, adminMiddleware, AdminWalletController.updateWalletStatus);
+
+/**
+ * @swagger
+ * /admin/wallets/{userId}/transactions:
+ *   get:
+ *     summary: Lấy lịch sử giao dịch của user (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [deposit, withdraw, refund, adjustment]
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, completed, failed, cancelled]
+ *     responses:
+ *       200:
+ *         description: Lịch sử giao dịch
+ */
+router.get('/wallets/:userId/transactions', authMiddleware, adminMiddleware, AdminWalletController.getUserTransactions);
+
 module.exports = router;
